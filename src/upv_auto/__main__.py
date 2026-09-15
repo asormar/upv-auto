@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import logging
 import sys
 
@@ -23,7 +24,8 @@ from upv_auto.adapters.email import EmailNotifier
 from upv_auto.app.book_slot import BookSlotUseCase
 from upv_auto.app.check_login import check_login
 from upv_auto.app.list_groups import list_groups
-from upv_auto.config import AppConfig, ConfigError, load_config
+from upv_auto.config import AppConfig, ConfigError, load_config, validate_group_code
+from upv_auto.domain.models import Slot
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +70,13 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="Skip waiting for the window to open (for testing).",
     )
+    book_parser.add_argument(
+        "--group",
+        action="append",
+        dest="groups",
+        metavar="CODE",
+        help="Group code to book instead of the configured slots; repeat for alternatives.",
+    )
 
     return parser.parse_args(argv)
 
@@ -78,6 +87,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = load_config(args.config)
+        if getattr(args, "groups", None):
+            slots = [Slot(group_code=validate_group_code(code)) for code in args.groups]
+            config = dataclasses.replace(config, slots=slots)
     except ConfigError as exc:
         logger.error(str(exc))
         return 1

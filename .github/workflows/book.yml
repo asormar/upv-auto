@@ -11,6 +11,14 @@ on:
           - check-login
           - list-groups
         default: book
+      now:
+        description: "book only: start immediately instead of waiting for the window (testing)"
+        type: boolean
+        default: false
+      groups:
+        description: "book only: space-separated group codes overriding config.yaml, e.g. MUS075 MUS074"
+        type: string
+        default: ""
 
 concurrency:
   group: book
@@ -56,7 +64,17 @@ jobs:
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_APP_PASSWORD: ${{ secrets.SMTP_APP_PASSWORD }}
           NOTIFY_EMAIL_TO: ${{ secrets.NOTIFY_EMAIL_TO }}
-        run: python -m upv_auto ${{ inputs.mode }}
+          # Inputs go through env vars, never interpolated into the script (avoids injection).
+          MODE: ${{ inputs.mode }}
+          NOW: ${{ inputs.now }}
+          GROUPS: ${{ inputs.groups }}
+        run: |
+          args=("$MODE")
+          if [ "$MODE" = "book" ]; then
+            [ "$NOW" = "true" ] && args+=(--now)
+            for code in $GROUPS; do args+=(--group "$code"); done
+          fi
+          python -m upv_auto "${args[@]}"
 
       - name: Upload debug artifacts
         if: failure()

@@ -74,7 +74,10 @@ def _require_key(raw: dict, key: str) -> object:
 
 
 def _require_group_code(slot_raw: dict) -> str:
-    group_code = str(_require_key(slot_raw, "group_code"))
+    return validate_group_code(str(_require_key(slot_raw, "group_code")))
+
+
+def validate_group_code(group_code: str) -> str:
     if not _GROUP_CODE_RE.match(group_code):
         raise ConfigError(
             f"Invalid group_code '{group_code}': expected a UPV group code like 'MUS074'"

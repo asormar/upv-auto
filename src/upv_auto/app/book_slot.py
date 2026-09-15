@@ -59,7 +59,15 @@ class BookSlotUseCase:
 
         window = self._compute_window()
 
-        if not skip_wait:
+        if skip_wait:
+            # Testing outside the real schedule: open the window now, same length.
+            now = self._clock.now()
+            window = BookingWindow(
+                opens_at=now,
+                closes_at=now + (window.closes_at - window.opens_at),
+                retry_interval_seconds=window.retry_interval_seconds,
+            )
+        else:
             self._wait_until(window.opens_at)
 
         return self._book_loop(session, window)

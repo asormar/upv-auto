@@ -199,3 +199,19 @@ def test_login_failure_exits_without_attempting_to_book():
     assert booking_client.calls == []
     assert any("Login failed" in m for m in notifier.messages)
     assert not any("secret" in m for m in notifier.messages)
+
+
+def test_skip_wait_outside_schedule_still_gets_a_full_retry_window():
+    config = make_config([SLOT_A], retry_interval_seconds=1.0)
+    start = datetime(2024, 1, 6, 16, 45, 0, tzinfo=TZ)  # hours after the configured window
+    clock = FakeClock(start)
+    use_case, booking_client, notifier, _ = build_use_case(
+        config=config,
+        clock=clock,
+        outcomes=[BookingResult(BookingOutcome.NOT_OPEN_YET), BookingResult(BookingOutcome.BOOKED)],
+    )
+
+    result = use_case.execute(skip_wait=True)
+
+    assert result == 0
+    assert len(booking_client.calls) == 2
