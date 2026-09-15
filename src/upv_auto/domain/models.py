@@ -85,6 +85,8 @@ class Session:
 
 class BookingOutcome(Enum):
     BOOKED = auto()
+    # Enrolled before we acted: may be the previous week's table, so not a success.
+    ALREADY_ENROLLED = auto()
     NOT_OPEN_YET = auto()
     TAKEN = auto()
     SESSION_EXPIRED = auto()

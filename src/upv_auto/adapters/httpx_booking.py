@@ -5,7 +5,8 @@ task notes for the HAR analysis):
 
 1. GET the weekly activity table for the configured activity.
 2. Find the configured group's cell:
-   - already ENROLLED -> booking is idempotent, report BOOKED.
+   - already ENROLLED -> ALREADY_ENROLLED. Not BOOKED: the page has no week
+     indicator and may still show the previous week right after opening time.
    - FULL -> TAKEN.
    - UNAVAILABLE or missing from the table -> NOT_OPEN_YET (retry later).
    - BOOKABLE -> GET the scraped booking link (never hardcoded: the opaque
@@ -62,8 +63,9 @@ class HttpxBookingClient:
                 return BookingResult(BookingOutcome.NOT_OPEN_YET, "group not listed")
 
             if group.state is GroupState.ENROLLED:
-                logger.info("Group %s already enrolled", slot.group_code)
-                return BookingResult(BookingOutcome.BOOKED, "already enrolled")
+                # The page has no week indicator, so this may be last week's table.
+                logger.info("Group %s already shows as enrolled", slot.group_code)
+                return BookingResult(BookingOutcome.ALREADY_ENROLLED, "already enrolled")
 
             if group.state is GroupState.FULL:
                 logger.info("Group %s is full", slot.group_code)

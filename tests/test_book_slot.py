@@ -300,3 +300,34 @@ def test_partial_success_reports_each_target_and_exits_non_zero():
     summary = notifier.messages[-1]
     assert summary.startswith("Booked 1/2: MUS074")
     assert "MUS075 (alternatives: MUS037): all groups taken" in summary
+
+
+def test_already_enrolled_is_retried_until_the_table_refreshes_then_booked():
+    config = make_config([], bookings=[BookingTarget((SLOT_A,))])
+    router = RoutingBookingClient(
+        {
+            "MUS074": [
+                BookingResult(BookingOutcome.ALREADY_ENROLLED),  # previous week's table
+                BookingResult(BookingOutcome.BOOKED),  # refreshed, booked by us
+            ]
+        }
+    )
+
+    result, notifier, _ = _run_with_router(config, router)
+
+    assert result == 0
+    assert router.calls == ["MUS074", "MUS074"]
+    assert notifier.messages[-1].startswith("Booked 1/1: MUS074")
+
+
+def test_already_enrolled_for_the_whole_window_is_not_reported_as_success():
+    config = make_config([], retry_interval_seconds=60.0, bookings=[BookingTarget((SLOT_A,))])
+    router = RoutingBookingClient({"MUS074": [BookingResult(BookingOutcome.ALREADY_ENROLLED)] * 10})
+
+    result, notifier, _ = _run_with_router(config, router)
+
+    assert result == 1
+    summary = notifier.messages[-1]
+    assert summary.startswith("Booked 0/1")
+    assert "already enrolled" in summary
+    assert "Check manually" in summary

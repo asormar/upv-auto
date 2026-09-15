@@ -1,8 +1,9 @@
 # upv-auto
 
 Automates booking a UPV (Universitat Politècnica de València) sports facility
-slot. Booking windows open every Saturday at 10:00 Europe/Madrid, and the
-site sometimes lags — so this retries from 10:00:00 to 10:03:00.
+slot. Booking opens every Saturday at 10:00 Europe/Madrid, but UPV sometimes
+keeps serving the previous week's table for a while and the page has no week
+indicator — so this starts at 10:01:00 and retries until 10:04:00.
 
 Runs for free on GitHub Actions (private repo). It is triggered remotely by
 [cron-job.org](https://cron-job.org) at 09:45 Europe/Madrid, which dispatches
@@ -30,8 +31,10 @@ Hybrid approach, hexagonal architecture:
    `{group_code: GroupAvailability}` map — one entry per group cell, with its
    state (`BOOKABLE` / `FULL` / `ENROLLED` / `UNAVAILABLE`), free-place count,
    and (for bookable groups) the exact booking link scraped from that cell.
-2. Looks up the configured group code. Already `ENROLLED` is treated as an
-   idempotent success; `FULL` means try the next configured slot;
+2. Looks up the configured group code. Already `ENROLLED` is **not** a
+   success: it may be the previous week's table, so it is retried and, if it
+   never changes, reported as "check manually"; `FULL` means try the next
+   alternative;
    `UNAVAILABLE` or missing means the window hasn't opened for that slot yet.
 3. If `BOOKABLE`, follows the scraped link (`sic_depact.HSemActMatri?...`) —
    the booking id in that link (`p_codgrupo_mat`) is opaque and changes

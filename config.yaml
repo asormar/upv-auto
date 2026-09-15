@@ -6,8 +6,10 @@ upv:
 
 window:
   weekday: saturday
-  opens_at: "10:00:00"
-  closes_at: "10:03:00"
+  # One minute after the official 10:00 opening: UPV sometimes keeps serving the
+  # previous week's table for a while, and the page has no week indicator.
+  opens_at: "10:01:00"
+  closes_at: "10:04:00"
   retry_interval_seconds: 1.5
 
 # The UPV sports activity whose weekly group table gets scraped and booked

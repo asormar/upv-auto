@@ -11,6 +11,8 @@ Algorithm:
    - BOOKED -> that target is done.
    - TAKEN -> move that target to its next alternative; none left -> done, failed.
    - NOT_OPEN_YET / ERROR -> retry next round, after `retry_interval_seconds`.
+   - ALREADY_ENROLLED -> also retried, never counted as success: the page has no
+     week indicator and may still show the previous week's enrolments.
    - SESSION_EXPIRED -> re-login at most once; a second expiry gives up (1).
    - NotImplementedError from the booking client -> notify and stop (1).
 4. Send one summary notification. Exit 0 only if every target was booked.
@@ -146,7 +148,10 @@ class BookSlotUseCase:
                     session = new_session
                     break  # restart the round with the fresh session
                 else:
-                    # NOT_OPEN_YET or ERROR: retry this target on the next round.
+                    # NOT_OPEN_YET, ERROR or ALREADY_ENROLLED: retry next round. An existing
+                    # enrolment may belong to the previous week's table, not yet refreshed.
+                    if result.outcome is BookingOutcome.ALREADY_ENROLLED:
+                        progress.seen_enrolled = True
                     needs_retry = True
 
                 if progress.is_finished:
@@ -170,6 +175,11 @@ class BookSlotUseCase:
                 lines.append(f"- {progress.target.label}: booked {progress.booked.label}")
             elif progress.is_finished:
                 lines.append(f"- {progress.target.label}: all groups taken")
+            elif progress.seen_enrolled:
+                lines.append(
+                    f"- {progress.target.label}: not booked; it kept showing as already enrolled "
+                    "(the table may not have refreshed to next week). Check manually."
+                )
             else:
                 lines.append(f"- {progress.target.label}: not booked")
         if note:
@@ -182,6 +192,7 @@ class _TargetProgress:
         self.target = target
         self.index = 0
         self.booked: Slot | None = None
+        self.seen_enrolled = False
 
     @property
     def current_slot(self) -> Slot:

@@ -77,7 +77,9 @@ def test_bookable_group_is_booked_by_following_the_scraped_link():
     assert calls == [TABLE_URL, BOOKING_URL]
 
 
-def test_already_enrolled_is_idempotent_booked_without_following_a_link():
+def test_already_enrolled_is_reported_as_such_not_as_booked():
+    # The table may still show the previous week, so a pre-existing enrolment
+    # is not proof that next week's place was secured.
     def handler(request: httpx.Request) -> httpx.Response:
         assert str(request.url) == TABLE_URL
         return httpx.Response(200, text=enrolled_table())
@@ -85,7 +87,7 @@ def test_already_enrolled_is_idempotent_booked_without_following_a_link():
     client = make_client(handler)
     result = client.book(make_session(), Slot(group_code="MUS074"))
 
-    assert result.outcome is BookingOutcome.BOOKED
+    assert result.outcome is BookingOutcome.ALREADY_ENROLLED
 
 
 def test_full_group_is_taken():
