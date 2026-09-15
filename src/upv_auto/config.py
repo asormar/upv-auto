@@ -8,16 +8,20 @@ never end up committed to the repository.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 
-from upv_auto.domain.models import Credentials, Slot
+from upv_auto.domain.models import Activity, Credentials, Slot
 
 
 class ConfigError(RuntimeError):
     """Raised when configuration is missing or invalid, with a human-readable message."""
+
+
+_GROUP_CODE_RE = re.compile(r"^[A-Z]{3}\d{3}$")
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,7 @@ class AppConfig:
     timezone: str
     upv: UpvConfig
     window: WindowConfig
+    activity: Activity
     slots: list[Slot]
     credentials: Credentials
     email: EmailConfig | None
@@ -68,6 +73,15 @@ def _require_key(raw: dict, key: str) -> object:
     return raw[key]
 
 
+def _require_group_code(slot_raw: dict) -> str:
+    group_code = str(_require_key(slot_raw, "group_code"))
+    if not _GROUP_CODE_RE.match(group_code):
+        raise ConfigError(
+            f"Invalid group_code '{group_code}': expected a UPV group code like 'MUS074'"
+        )
+    return group_code
+
+
 def load_config(path: str | Path = "config.yaml") -> AppConfig:
     """Load YAML config from `path` and merge in secrets from the environment."""
     config_path = Path(path)
@@ -80,6 +94,7 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
     timezone = _require_key(raw, "timezone")
     upv_raw = _require_key(raw, "upv")
     window_raw = _require_key(raw, "window")
+    activity_raw = _require_key(raw, "activity")
     slots_raw = _require_key(raw, "slots")
 
     upv = UpvConfig(
@@ -92,15 +107,13 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         closes_at=_require_key(window_raw, "closes_at"),
         retry_interval_seconds=float(_require_key(window_raw, "retry_interval_seconds")),
     )
-    slots = [
-        Slot(
-            facility=_require_key(s, "facility"),
-            sport=_require_key(s, "sport"),
-            day_offset_days=int(_require_key(s, "day_offset_days")),
-            start_time=_require_key(s, "start_time"),
-        )
-        for s in slots_raw
-    ]
+    activity = Activity(
+        campus=str(_require_key(activity_raw, "campus")),
+        tipoact=str(_require_key(activity_raw, "tipoact")),
+        codacti=str(_require_key(activity_raw, "codacti")),
+        name=str(_require_key(activity_raw, "name")),
+    )
+    slots = [Slot(group_code=_require_group_code(s)) for s in slots_raw]
 
     credentials = Credentials(
         username=_require_env("UPV_USERNAME"),
@@ -124,6 +137,7 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         timezone=timezone,
         upv=upv,
         window=window,
+        activity=activity,
         slots=slots,
         credentials=credentials,
         email=email,

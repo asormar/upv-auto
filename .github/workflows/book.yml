@@ -9,6 +9,7 @@ on:
         options:
           - book
           - check-login
+          - list-groups
         default: book
 
 concurrency:

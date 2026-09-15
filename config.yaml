@@ -10,12 +10,17 @@ window:
   closes_at: "10:03:00"
   retry_interval_seconds: 1.5
 
-# Preferred slot first, then alternatives tried in order if a preferred one is taken.
-# day_offset_days is relative to "today" (the day the booking window opens),
-# e.g. 0 = today, 7 = the same weekday next week.
-# Replace the placeholder facility/sport values once the real ones are known.
+# The UPV sports activity whose weekly group table gets scraped and booked
+# against. Run `python -m upv_auto list-groups` to see the current state of
+# every group for this activity (useful for picking group codes below).
+activity:
+  name: MUSCULACION
+  campus: V
+  tipoact: "6894"
+  codacti: "21948"
+
+# Preferred group first, then alternatives tried in order if a preferred one
+# is taken. Group codes look like "MUS074" (see `list-groups`).
 slots:
-  - facility: "TODO"
-    sport: "TODO"
-    day_offset_days: 0
-    start_time: "18:00"
+  - group_code: MUS074
+  - group_code: MUS075

@@ -21,12 +21,26 @@ Hybrid approach, hexagonal architecture:
 - `app/book_slot.py` and `app/check_login.py` hold the use cases; `ports.py`
   defines the interfaces adapters implement; `domain/` has no I/O.
 
-**The booking endpoints are not mapped yet.** `HttpxBookingClient.book()` is
-a deliberate stub that raises `NotImplementedError` with instructions. Wire
-it up once you've inspected the real booking request/response shapes (see
-comments in that file). Everything else — login, session verification,
-retry loop, notifications, CLI, GitHub Actions workflow, tests — is real and
-working.
+**Booking works by scraping and replaying links, not calling a JSON API.**
+`HttpxBookingClient.book()` (`adapters/httpx_booking.py`):
+
+1. GETs the weekly activity table for the configured activity
+   (`sic_depact.HSemActividades?...`) and parses it
+   (`adapters/upv_activities_parser.py`, stdlib `html.parser` only) into a
+   `{group_code: GroupAvailability}` map — one entry per group cell, with its
+   state (`BOOKABLE` / `FULL` / `ENROLLED` / `UNAVAILABLE`), free-place count,
+   and (for bookable groups) the exact booking link scraped from that cell.
+2. Looks up the configured group code. Already `ENROLLED` is treated as an
+   idempotent success; `FULL` means try the next configured slot;
+   `UNAVAILABLE` or missing means the window hasn't opened for that slot yet.
+3. If `BOOKABLE`, follows the scraped link (`sic_depact.HSemActMatri?...`) —
+   the booking id in that link (`p_codgrupo_mat`) is opaque and changes
+   between groups, so it is always read from the table right before booking,
+   never hardcoded — then re-parses the resulting page to confirm the group
+   is now `ENROLLED` ("Ya inscrito").
+
+Any response whose final URL lands on `cas.upv.es` means the session has
+expired.
 
 ## Local setup
 
@@ -38,9 +52,26 @@ python -m playwright install chromium   # only needed to actually run a login
 cp .env.example .env          # fill in UPV_USERNAME / UPV_PASSWORD
 ```
 
-Edit `config.yaml`: the `slots` list has placeholder `facility`/`sport`
-values (`"TODO"`) — replace them once known. The first slot is the
-preferred one; alternatives are tried in order if it's taken.
+Edit `config.yaml`: the `activity` section picks the UPV sports activity
+(campus, `tipoact`, `codacti`); `slots` lists group codes to try, preferred
+first, e.g.:
+
+```yaml
+activity:
+  name: MUSCULACION
+  campus: V
+  tipoact: "6894"
+  codacti: "21948"
+
+slots:
+  - group_code: MUS074
+  - group_code: MUS075
+```
+
+Don't know the group codes yet? Run `python -m upv_auto list-groups` (see
+below) to print every group for the configured activity along with its
+current state and free places, then pick codes from there. Alternatives are
+tried in order if the preferred group is taken.
 
 Run the tests (no network, no real browser):
 
@@ -52,6 +83,7 @@ Commands:
 
 ```bash
 python -m upv_auto check-login          # log in, verify the session, exit
+python -m upv_auto list-groups          # log in, print each group's state (pick group_code values)
 python -m upv_auto book                 # wait for the window, attempt to book
 python -m upv_auto book --now           # skip waiting (local testing only)
 ```

@@ -8,12 +8,12 @@ from fakes import FakeAuthenticator, FakeBookingClient, FakeClock, FakeNotifier,
 from upv_auto.app.book_slot import BookSlotUseCase
 from upv_auto.config import AppConfig, UpvConfig, WindowConfig
 from upv_auto.domain.errors import AuthenticationFailed
-from upv_auto.domain.models import BookingOutcome, BookingResult, Credentials, Slot
+from upv_auto.domain.models import Activity, BookingOutcome, BookingResult, Credentials, Slot
 
 TZ = ZoneInfo("Europe/Madrid")
 
-SLOT_A = Slot(facility="Padel", sport="Padel", day_offset_days=0, start_time="18:00")
-SLOT_B = Slot(facility="Padel", sport="Padel", day_offset_days=0, start_time="19:00")
+SLOT_A = Slot(group_code="MUS074")
+SLOT_B = Slot(group_code="MUS075")
 
 
 def make_config(slots: list[Slot], *, retry_interval_seconds: float = 1.5) -> AppConfig:
@@ -26,6 +26,7 @@ def make_config(slots: list[Slot], *, retry_interval_seconds: float = 1.5) -> Ap
             closes_at="10:03:00",
             retry_interval_seconds=retry_interval_seconds,
         ),
+        activity=Activity(campus="V", tipoact="6894", codacti="21948", name="MUSCULACION"),
         slots=slots,
         credentials=Credentials(username="user", password="secret"),
         email=None,

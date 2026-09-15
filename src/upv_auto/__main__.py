@@ -2,10 +2,10 @@
 
 Usage:
     python -m upv_auto check-login [--config PATH]
+    python -m upv_auto list-groups [--config PATH]
     python -m upv_auto book [--config PATH] [--now]
 
---now skips waiting for the booking window to open; useful for local testing
-against the stub booking client.
+--now skips waiting for the booking window to open; useful for local testing.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from upv_auto.adapters.console import ConsoleNotifier
 from upv_auto.adapters.email import EmailNotifier
 from upv_auto.app.book_slot import BookSlotUseCase
 from upv_auto.app.check_login import check_login
+from upv_auto.app.list_groups import list_groups
 from upv_auto.config import AppConfig, ConfigError, load_config
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "check-login", help="Log in and verify the session, then exit."
     )
     check_parser.add_argument("--config", default="config.yaml")
+
+    list_groups_parser = subparsers.add_parser(
+        "list-groups",
+        help="Log in, fetch the activity table, and print each group's state.",
+    )
+    list_groups_parser.add_argument("--config", default="config.yaml")
 
     book_parser = subparsers.add_parser(
         "book", help="Wait for the booking window and attempt to book a slot."
@@ -84,8 +91,12 @@ def main(argv: list[str] | None = None) -> int:
         ok = check_login(config.credentials, authenticator, verifier, notifier, clock)
         return 0 if ok else 1
 
+    if args.command == "list-groups":
+        ok = list_groups(config, authenticator, verifier, notifier, clock)
+        return 0 if ok else 1
+
     if args.command == "book":
-        booking_client = HttpxBookingClient()
+        booking_client = HttpxBookingClient(activity=config.activity)
         use_case = BookSlotUseCase(
             authenticator=authenticator,
             verifier=verifier,

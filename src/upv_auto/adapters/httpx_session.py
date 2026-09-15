@@ -9,12 +9,22 @@ from upv_auto.domain.models import Session
 DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 
-def build_client(session: Session, *, timeout: httpx.Timeout = DEFAULT_TIMEOUT) -> httpx.Client:
-    """Build an httpx.Client carrying the cookies and user agent from a login Session."""
+def build_client(
+    session: Session,
+    *,
+    timeout: httpx.Timeout = DEFAULT_TIMEOUT,
+    transport: httpx.BaseTransport | None = None,
+) -> httpx.Client:
+    """Build an httpx.Client carrying the cookies and user agent from a login Session.
+
+    `transport` is injectable for tests (e.g. `httpx.MockTransport`); left as
+    `None` it falls back to httpx's normal network transport.
+    """
     client = httpx.Client(
         headers={"User-Agent": session.user_agent},
         timeout=timeout,
         follow_redirects=True,
+        transport=transport,
     )
     for cookie in session.cookies:
         client.cookies.set(

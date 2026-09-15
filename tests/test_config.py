@@ -18,15 +18,15 @@ window:
   closes_at: "10:03:00"
   retry_interval_seconds: 1.5
 
+activity:
+  name: MUSCULACION
+  campus: V
+  tipoact: "6894"
+  codacti: "21948"
+
 slots:
-  - facility: "Padel"
-    sport: "Padel"
-    day_offset_days: 0
-    start_time: "18:00"
-  - facility: "Padel"
-    sport: "Padel"
-    day_offset_days: 0
-    start_time: "19:00"
+  - group_code: MUS074
+  - group_code: MUS075
 """
 
 
@@ -49,8 +49,10 @@ def test_load_config_reads_yaml_and_env(tmp_path, monkeypatch):
     assert config.upv.entry_url == "https://example.test/entry"
     assert config.window.opens_at == "10:00:00"
     assert config.window.retry_interval_seconds == 1.5
+    assert config.activity.campus == "V"
+    assert config.activity.codacti == "21948"
     assert len(config.slots) == 2
-    assert config.slots[0].start_time == "18:00"
+    assert config.slots[0].group_code == "MUS074"
     assert config.credentials.username == "student1"
     assert config.credentials.password == "hunter2"
     assert config.email is None
@@ -100,6 +102,15 @@ def test_load_config_missing_file_raises_clear_error(tmp_path, monkeypatch):
 
     with pytest.raises(ConfigError, match="not found"):
         load_config(tmp_path / "does-not-exist.yaml")
+
+
+def test_load_config_invalid_group_code_raises_clear_error(tmp_path, monkeypatch):
+    config_path = write_config(tmp_path, CONFIG_YAML.replace("MUS074", "not-a-code"))
+    monkeypatch.setenv("UPV_USERNAME", "student1")
+    monkeypatch.setenv("UPV_PASSWORD", "hunter2")
+
+    with pytest.raises(ConfigError, match="not-a-code"):
+        load_config(config_path)
 
 
 def test_credentials_repr_hides_password():

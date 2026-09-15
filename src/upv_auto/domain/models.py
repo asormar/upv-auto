@@ -21,16 +21,42 @@ class Credentials:
 
 @dataclass(frozen=True)
 class Slot:
-    """A candidate booking slot, described in configuration terms."""
+    """A candidate booking slot: a UPV activity group code, e.g. 'MUS074'."""
 
-    facility: str
-    sport: str
-    day_offset_days: int
-    start_time: str  # "HH:MM"
+    group_code: str
 
     @property
     def label(self) -> str:
-        return f"{self.facility}/{self.sport} @ +{self.day_offset_days}d {self.start_time}"
+        return self.group_code
+
+
+@dataclass(frozen=True)
+class Activity:
+    """The UPV sports activity (campus + programme + activity) whose groups are booked."""
+
+    campus: str
+    tipoact: str
+    codacti: str
+    name: str = ""
+
+
+class GroupState(Enum):
+    """The state of one activity group cell, as scraped from the activity table."""
+
+    BOOKABLE = auto()
+    FULL = auto()
+    ENROLLED = auto()
+    UNAVAILABLE = auto()
+
+
+@dataclass(frozen=True)
+class GroupAvailability:
+    """One parsed group cell from the UPV activity table."""
+
+    code: str
+    state: GroupState
+    free_places: int | None = None
+    booking_path: str | None = None
 
 
 @dataclass(frozen=True)
