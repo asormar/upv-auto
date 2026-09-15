@@ -10,18 +10,12 @@ from __future__ import annotations
 
 import logging
 
-import httpx
-
-from upv_auto.adapters.httpx_session import build_client
-from upv_auto.adapters.upv_activities_parser import parse_groups
-from upv_auto.adapters.upv_urls import CAS_HOST, DEFAULT_BASE_URL, activity_table_url
 from upv_auto.app.authenticate import authenticate
 from upv_auto.config import AppConfig
-from upv_auto.ports import Authenticator, Clock, Notifier, SessionVerifier
+from upv_auto.domain.models import BookingOutcome
+from upv_auto.ports import ActivityTableClient, Authenticator, Clock, Notifier, SessionVerifier
 
 logger = logging.getLogger(__name__)
-
-RESPONSE_ENCODING = "iso-8859-15"
 
 
 def list_groups(
@@ -30,9 +24,7 @@ def list_groups(
     verifier: SessionVerifier,
     notifier: Notifier,
     clock: Clock,
-    *,
-    base_url: str = DEFAULT_BASE_URL,
-    cas_host: str = CAS_HOST,
+    table_client: ActivityTableClient,
 ) -> bool:
     """Log in, fetch the activity table, and print each group's state.
 
@@ -42,31 +34,20 @@ def list_groups(
     if session is None:
         return False
 
-    url = activity_table_url(config.activity, base_url=base_url)
+    snapshot = table_client.fetch_groups(session)
 
-    with build_client(session) as client:
-        try:
-            response = client.get(url)
-        except httpx.HTTPError as exc:
-            logger.error("Failed to fetch activity table: %s", exc)
-            notifier.notify(f"Failed to fetch activity table: {exc}")
-            return False
-
-    if httpx.URL(str(response.url)).host == cas_host:
+    if snapshot.failure is BookingOutcome.SESSION_EXPIRED:
         logger.error("Session expired while fetching the activity table")
         notifier.notify("Session expired while fetching the activity table.")
         return False
 
-    if response.status_code >= 400:
-        logger.error("Activity table request returned HTTP %d", response.status_code)
-        notifier.notify(f"Activity table request returned HTTP {response.status_code}.")
+    if snapshot.failure is BookingOutcome.ERROR:
+        logger.error("Failed to fetch activity table: %s", snapshot.message)
+        notifier.notify(f"Failed to fetch activity table: {snapshot.message}")
         return False
 
-    response.encoding = RESPONSE_ENCODING
-    groups = parse_groups(response.text)
-
-    for code in sorted(groups):
-        group = groups[code]
+    for code in sorted(snapshot.groups):
+        group = snapshot.groups[code]
         free = "" if group.free_places is None else f", {group.free_places} free"
         print(f"{code}: {group.state.name}{free}")
 

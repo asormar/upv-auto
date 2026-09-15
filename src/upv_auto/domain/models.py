@@ -84,19 +84,23 @@ class Session:
 
 
 class BookingOutcome(Enum):
-    BOOKED = auto()
-    # Enrolled before we acted: may be the previous week's table, so not a success.
-    ALREADY_ENROLLED = auto()
-    NOT_OPEN_YET = auto()
-    TAKEN = auto()
+    """Why an activity-table read could not be turned into a `TableSnapshot`."""
+
     SESSION_EXPIRED = auto()
     ERROR = auto()
 
 
 @dataclass(frozen=True)
-class BookingResult:
-    outcome: BookingOutcome
+class TableSnapshot:
+    """Result of reading the activity table: parsed groups, or why it could not be read."""
+
+    groups: dict[str, GroupAvailability] | None = None
+    failure: BookingOutcome | None = None  # only SESSION_EXPIRED or ERROR
     message: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.groups is not None
 
 
 @dataclass(frozen=True)

@@ -22,28 +22,39 @@ Hybrid approach, hexagonal architecture:
 - `app/book_slot.py` and `app/check_login.py` hold the use cases; `ports.py`
   defines the interfaces adapters implement; `domain/` has no I/O.
 
-**Booking works by scraping and replaying links, not calling a JSON API.**
-`HttpxBookingClient.book()` (`adapters/httpx_booking.py`):
+**Booking works by scraping and replaying links, not calling a JSON API**,
+and downloads the activity table **at most once per round**, no matter how
+many bookings are pending. `HttpxActivityTableClient`
+(`adapters/httpx_booking.py`) exposes two calls:
 
-1. GETs the weekly activity table for the configured activity
-   (`sic_depact.HSemActividades?...`) and parses it
-   (`adapters/upv_activities_parser.py`, stdlib `html.parser` only) into a
-   `{group_code: GroupAvailability}` map — one entry per group cell, with its
-   state (`BOOKABLE` / `FULL` / `ENROLLED` / `UNAVAILABLE`), free-place count,
-   and (for bookable groups) the exact booking link scraped from that cell.
-2. Looks up the configured group code. Already `ENROLLED` is **not** a
-   success: it may be the previous week's table, so it is retried and, if it
-   never changes, reported as "check manually"; `FULL` means try the next
-   alternative;
-   `UNAVAILABLE` or missing means the window hasn't opened for that slot yet.
-3. If `BOOKABLE`, follows the scraped link (`sic_depact.HSemActMatri?...`) —
-   the booking id in that link (`p_codgrupo_mat`) is opaque and changes
-   between groups, so it is always read from the table right before booking,
-   never hardcoded — then re-parses the resulting page to confirm the group
-   is now `ENROLLED` ("Ya inscrito").
+- `fetch_groups()` GETs the weekly activity table for the configured
+  activity (`sic_depact.HSemActividades?...`) and parses it
+  (`adapters/upv_activities_parser.py`, stdlib `html.parser` only) into a
+  `{group_code: GroupAvailability}` map — one entry per group cell, with its
+  state (`BOOKABLE` / `FULL` / `ENROLLED` / `UNAVAILABLE`), free-place count,
+  and (for bookable groups) the exact booking link scraped from that cell.
+- `follow_booking()` GETs a bookable group's scraped link
+  (`sic_depact.HSemActMatri?...`) — the booking id in that link
+  (`p_codgrupo_mat`) is opaque and changes between groups, so it is always
+  read from the table right before booking, never hardcoded. UPV redirects
+  that request back to the now-updated activity table, so the response is
+  parsed the same way and handed back as another table snapshot.
+
+`app/book_slot.py` drives this each round: one `fetch_groups()` call, then
+every pending booking is resolved against that same table in turn. A
+`BOOKABLE` group gets `follow_booking()`'d, and **the table that call
+returns replaces the round's table**, so the next pending booking is
+resolved against the fresh data with no extra download. `FULL` moves to the
+next alternative and re-evaluates it immediately, still within the same
+table. Already `ENROLLED` is **not** automatically a success: the page has
+no week indicator, so it may be the previous week's table — it only counts
+as booked once this run has itself followed a booking link for that exact
+group code (tracked per target as `attempted_codes`); otherwise it is
+retried and, if it never changes, reported as "check manually".
+`UNAVAILABLE` or missing means the window hasn't opened for that slot yet.
 
 Any response whose final URL lands on `cas.upv.es` means the session has
-expired.
+expired; the run re-logs in at most once before giving up.
 
 ## Local setup
 

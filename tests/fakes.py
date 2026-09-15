@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from upv_auto.domain.models import Session
+from upv_auto.domain.models import BookingOutcome, GroupAvailability, GroupState, Session, TableSnapshot
+
+_STATE_BY_NAME = {state.name: state for state in GroupState}
 
 
 class FakeClock:
@@ -51,19 +53,50 @@ class FakeVerifier:
         return self.valid
 
 
-class FakeBookingClient:
-    """Replays a fixed sequence of outcomes (or exceptions), one per `book()` call."""
+def table(**states: str) -> TableSnapshot:
+    """Build a TableSnapshot from `code=state_name` kwargs, e.g. `table(MUS074="BOOKABLE")`.
 
-    def __init__(self, outcomes: list) -> None:
-        self._outcomes = list(outcomes)
+    A BOOKABLE group is given a `booking_path` of `book/<code>` so
+    `follow_booking` can be exercised without repeating it by hand.
+    """
+    groups = {}
+    for code, state_name in states.items():
+        state = _STATE_BY_NAME[state_name]
+        groups[code] = GroupAvailability(
+            code=code,
+            state=state,
+            booking_path=f"book/{code}" if state is GroupState.BOOKABLE else None,
+        )
+    return TableSnapshot(groups=groups)
+
+
+def expired() -> TableSnapshot:
+    return TableSnapshot(failure=BookingOutcome.SESSION_EXPIRED)
+
+
+def error(message: str = "boom") -> TableSnapshot:
+    return TableSnapshot(failure=BookingOutcome.ERROR, message=message)
+
+
+class FakeActivityTableClient:
+    """Replays scripted `TableSnapshot`s: a queue for `fetch_groups`, a per-code queue for `follow_booking`."""
+
+    def __init__(
+        self,
+        fetch_results: list[TableSnapshot],
+        follow_results: dict[str, list[TableSnapshot]] | None = None,
+    ) -> None:
+        self._fetch_results = list(fetch_results)
+        self._follow_results = {code: list(items) for code, items in (follow_results or {}).items()}
         self.calls: list[tuple] = []
 
-    def book(self, session, slot):
-        self.calls.append((session, slot))
-        item = self._outcomes.pop(0)
-        if isinstance(item, Exception):
-            raise item
-        return item
+    def fetch_groups(self, session) -> TableSnapshot:
+        self.calls.append(("fetch",))
+        return self._fetch_results.pop(0)
+
+    def follow_booking(self, session, group: GroupAvailability) -> TableSnapshot:
+        self.calls.append(("follow", group.code))
+        return self._follow_results[group.code].pop(0)
 
 
 class FakeNotifier:

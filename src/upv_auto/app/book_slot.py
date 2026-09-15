@@ -6,15 +6,27 @@ Algorithm:
 2. Wait until the window opens (coarse sleep while more than 5s remain, then
    fine 50ms steps). With `skip_wait` (testing), the window opens immediately
    and keeps its configured length.
-3. Until the window closes, go round-robin over every pending booking target,
-   trying its current group (preferred first, then alternatives):
-   - BOOKED -> that target is done.
-   - TAKEN -> move that target to its next alternative; none left -> done, failed.
-   - NOT_OPEN_YET / ERROR -> retry next round, after `retry_interval_seconds`.
-   - ALREADY_ENROLLED -> also retried, never counted as success: the page has no
-     week indicator and may still show the previous week's enrolments.
-   - SESSION_EXPIRED -> re-login at most once; a second expiry gives up (1).
-   - NotImplementedError from the booking client -> notify and stop (1).
+3. Until the window closes, run rounds. Each round downloads the activity
+   table exactly once (`fetch_groups`) and then goes round-robin over every
+   pending booking target, resolving its current group (preferred first,
+   then alternatives) against that one table:
+   - BOOKABLE -> follow the scraped booking link (`follow_booking`). UPV
+     redirects that request back to the refreshed table, so its response
+     replaces the table for the rest of the round — the remaining targets
+     in this round are resolved against it too, with no extra download.
+   - FULL -> move to the next alternative and re-evaluate it immediately
+     against the same table; no alternatives left -> that target is done,
+     failed.
+   - ENROLLED -> the page has no week indicator, so this may still be last
+     week's table. Only counted as booked if this run already followed a
+     booking link for that exact code (a booking GET that may have timed
+     out but succeeded server-side); otherwise it is retried next round.
+   - missing / UNAVAILABLE -> retried next round.
+   - SESSION_EXPIRED (from either call) -> re-login at most once for the
+     whole run; a second expiry gives up (1). A successful re-login ends
+     the round early so the next one refetches from scratch.
+   If any pending target still needs a retry after the round, sleep
+   `retry_interval_seconds` once (not once per target).
 4. Send one summary notification. Exit 0 only if every target was booked.
 """
 
@@ -25,8 +37,8 @@ from datetime import datetime
 
 from upv_auto.app.authenticate import authenticate
 from upv_auto.config import AppConfig
-from upv_auto.domain.models import BookingOutcome, BookingTarget, BookingWindow, Session, Slot
-from upv_auto.ports import Authenticator, BookingClient, Clock, Notifier, SessionVerifier
+from upv_auto.domain.models import BookingOutcome, BookingTarget, BookingWindow, GroupState, Session, Slot
+from upv_auto.ports import ActivityTableClient, Authenticator, Clock, Notifier, SessionVerifier
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +53,14 @@ class BookSlotUseCase:
         self,
         authenticator: Authenticator,
         verifier: SessionVerifier,
-        booking_client: BookingClient,
+        table_client: ActivityTableClient,
         notifier: Notifier,
         clock: Clock,
         config: AppConfig,
     ) -> None:
         self._authenticator = authenticator
         self._verifier = verifier
-        self._booking_client = booking_client
+        self._table_client = table_client
         self._notifier = notifier
         self._clock = clock
         self._config = config
@@ -108,55 +120,93 @@ class BookSlotUseCase:
                 self._clock.sleep(_FINE_STEP_SECONDS)
 
     def _book_loop(self, session: Session, window: BookingWindow) -> int:
-        """Round-robin over every booking target so none waits for another to finish."""
+        """Round-robin over every pending target, downloading the table once per round."""
         pending = [_TargetProgress(target) for target in self._config.bookings]
         finished: list[_TargetProgress] = []
         attempts = 0
         relogin_used = False
 
         while pending and self._clock.now() < window.closes_at:
+            snapshot = self._table_client.fetch_groups(session)
+            attempts += 1
+
+            if snapshot.failure is BookingOutcome.SESSION_EXPIRED:
+                session, relogin_used, gave_up = self._reauthenticate(relogin_used, finished, pending)
+                if gave_up:
+                    return 1
+                continue  # refetch immediately with the fresh session, no sleep
+
+            if snapshot.failure is BookingOutcome.ERROR:
+                self._clock.sleep(window.retry_interval_seconds)
+                continue
+
+            groups = snapshot.groups
             needs_retry = False
+            interrupted = False
 
             for progress in list(pending):
-                slot = progress.current_slot
-                attempts += 1
-                try:
-                    result = self._booking_client.book(session, slot)
-                except NotImplementedError as exc:
-                    logger.error("Booking adapter not implemented: %s", exc)
-                    self._notifier.notify(f"Booking adapter not implemented yet: {exc}")
-                    return 1
+                just_followed = False
 
-                if result.outcome is BookingOutcome.BOOKED:
-                    logger.info("Booked %s after %d total attempt(s)", slot.label, attempts)
-                    progress.booked = slot
-                elif result.outcome is BookingOutcome.TAKEN:
-                    logger.info("Group %s is taken", slot.label)
-                    progress.index += 1
-                elif result.outcome is BookingOutcome.SESSION_EXPIRED:
-                    if relogin_used:
-                        logger.error("Session expired again after re-login; giving up")
-                        self._notifier.notify(
-                            self._summary(finished + pending, "Session expired again after re-login. Giving up.")
-                        )
-                        return 1
-                    relogin_used = True
-                    logger.info("Session expired, re-authenticating")
-                    new_session = self._login_and_verify()
-                    if new_session is None:
-                        return 1
-                    session = new_session
-                    break  # restart the round with the fresh session
-                else:
-                    # NOT_OPEN_YET, ERROR or ALREADY_ENROLLED: retry next round. An existing
-                    # enrolment may belong to the previous week's table, not yet refreshed.
-                    if result.outcome is BookingOutcome.ALREADY_ENROLLED:
-                        progress.seen_enrolled = True
-                    needs_retry = True
+                while True:
+                    slot = progress.current_slot
+                    group = groups.get(slot.group_code)
+
+                    if group is None or group.state is GroupState.UNAVAILABLE:
+                        needs_retry = True
+                        break
+
+                    if group.state is GroupState.ENROLLED:
+                        if slot.group_code in progress.attempted_codes:
+                            logger.info("Booked %s after %d total attempt(s)", slot.label, attempts)
+                            progress.booked = slot
+                        else:
+                            # The page has no week indicator: this enrolment may
+                            # belong to last week's table, not something we did.
+                            progress.seen_enrolled = True
+                            needs_retry = True
+                        break
+
+                    if group.state is GroupState.FULL:
+                        logger.info("Group %s is full", slot.label)
+                        progress.index += 1
+                        just_followed = False
+                        if progress.is_finished:
+                            break
+                        continue  # re-evaluate the new alternative against the same table
+
+                    if just_followed:
+                        # Unexpected: still bookable right after following its own link.
+                        needs_retry = True
+                        break
+
+                    # BOOKABLE
+                    progress.attempted_codes.add(slot.group_code)
+                    attempts += 1
+                    after = self._table_client.follow_booking(session, group)
+
+                    if after.failure is BookingOutcome.SESSION_EXPIRED:
+                        session, relogin_used, gave_up = self._reauthenticate(relogin_used, finished, pending)
+                        if gave_up:
+                            return 1
+                        interrupted = True
+                        break
+
+                    if after.failure is BookingOutcome.ERROR:
+                        needs_retry = True
+                        break
+
+                    groups = after.groups  # fresh table, reused by the rest of this round
+                    just_followed = True
 
                 if progress.is_finished:
                     pending.remove(progress)
                     finished.append(progress)
+
+                if interrupted:
+                    break  # this round ends here; the next one refetches from scratch
+
+            if interrupted:
+                continue
 
             if pending and needs_retry:
                 self._clock.sleep(window.retry_interval_seconds)
@@ -165,6 +215,32 @@ class BookSlotUseCase:
         self._notifier.notify(self._summary(finished + pending, closed_note))
         logger.info("Booking finished after %d attempt(s)", attempts)
         return 0 if all(p.booked for p in finished + pending) else 1
+
+    def _reauthenticate(
+        self,
+        relogin_used: bool,
+        finished: list[_TargetProgress],
+        pending: list[_TargetProgress],
+    ) -> tuple[Session | None, bool, bool]:
+        """Handle a SESSION_EXPIRED failure.
+
+        Returns `(session, relogin_used, gave_up)`. At most one re-login is
+        allowed for the whole run: a second expiry notifies a summary and
+        gives up. A re-login that itself fails also gives up, without an
+        extra summary (`authenticate` already notified why).
+        """
+        if relogin_used:
+            logger.error("Session expired again after re-login; giving up")
+            self._notifier.notify(
+                self._summary(finished + pending, "Session expired again after re-login. Giving up.")
+            )
+            return None, relogin_used, True
+
+        logger.info("Session expired, re-authenticating")
+        new_session = self._login_and_verify()
+        if new_session is None:
+            return None, relogin_used, True
+        return new_session, True, False
 
     @staticmethod
     def _summary(progresses: list[_TargetProgress], note: str) -> str:
@@ -193,6 +269,7 @@ class _TargetProgress:
         self.index = 0
         self.booked: Slot | None = None
         self.seen_enrolled = False
+        self.attempted_codes: set[str] = set()
 
     @property
     def current_slot(self) -> Slot:

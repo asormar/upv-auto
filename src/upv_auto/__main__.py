@@ -15,7 +15,7 @@ import dataclasses
 import logging
 import sys
 
-from upv_auto.adapters.httpx_booking import HttpxBookingClient
+from upv_auto.adapters.httpx_booking import HttpxActivityTableClient
 from upv_auto.adapters.httpx_session import HttpxSessionVerifier
 from upv_auto.adapters.playwright_auth import PlaywrightCasAuthenticator
 from upv_auto.adapters.system_clock import SystemClock
@@ -105,21 +105,21 @@ def main(argv: list[str] | None = None) -> int:
         ok = check_login(config.credentials, authenticator, verifier, notifier, clock)
         return 0 if ok else 1
 
-    if args.command == "list-groups":
-        ok = list_groups(config, authenticator, verifier, notifier, clock)
-        return 0 if ok else 1
+    with HttpxActivityTableClient(activity=config.activity) as table_client:
+        if args.command == "list-groups":
+            ok = list_groups(config, authenticator, verifier, notifier, clock, table_client)
+            return 0 if ok else 1
 
-    if args.command == "book":
-        booking_client = HttpxBookingClient(activity=config.activity)
-        use_case = BookSlotUseCase(
-            authenticator=authenticator,
-            verifier=verifier,
-            booking_client=booking_client,
-            notifier=notifier,
-            clock=clock,
-            config=config,
-        )
-        return use_case.execute(skip_wait=args.now)
+        if args.command == "book":
+            use_case = BookSlotUseCase(
+                authenticator=authenticator,
+                verifier=verifier,
+                table_client=table_client,
+                notifier=notifier,
+                clock=clock,
+                config=config,
+            )
+            return use_case.execute(skip_wait=args.now)
 
     return 1  # pragma: no cover - argparse enforces a valid subcommand
 

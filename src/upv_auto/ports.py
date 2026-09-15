@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
-from upv_auto.domain.models import BookingResult, Credentials, Session, Slot
+from upv_auto.domain.models import Credentials, GroupAvailability, Session, TableSnapshot
 
 
 class Authenticator(Protocol):
@@ -20,8 +20,10 @@ class SessionVerifier(Protocol):
     def is_valid(self, session: Session) -> bool: ...
 
 
-class BookingClient(Protocol):
-    def book(self, session: Session, slot: Slot) -> BookingResult: ...
+class ActivityTableClient(Protocol):
+    def fetch_groups(self, session: Session) -> TableSnapshot: ...
+
+    def follow_booking(self, session: Session, group: GroupAvailability) -> TableSnapshot: ...
 
 
 class Notifier(Protocol):
