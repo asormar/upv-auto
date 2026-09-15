@@ -28,7 +28,7 @@ def make_config(slots: list[Slot], *, retry_interval_seconds: float = 1.5) -> Ap
         ),
         slots=slots,
         credentials=Credentials(username="user", password="secret"),
-        telegram=None,
+        email=None,
     )
 
 

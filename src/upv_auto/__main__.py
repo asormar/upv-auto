@@ -18,7 +18,8 @@ from upv_auto.adapters.httpx_booking import HttpxBookingClient
 from upv_auto.adapters.httpx_session import HttpxSessionVerifier
 from upv_auto.adapters.playwright_auth import PlaywrightCasAuthenticator
 from upv_auto.adapters.system_clock import SystemClock
-from upv_auto.adapters.telegram import ConsoleNotifier, TelegramNotifier
+from upv_auto.adapters.console import ConsoleNotifier
+from upv_auto.adapters.email import EmailNotifier
 from upv_auto.app.book_slot import BookSlotUseCase
 from upv_auto.app.check_login import check_login
 from upv_auto.config import AppConfig, ConfigError, load_config
@@ -35,8 +36,10 @@ def _configure_logging() -> None:
 
 
 def _build_notifier(config: AppConfig):
-    if config.telegram is not None:
-        return TelegramNotifier(config.telegram.bot_token, config.telegram.chat_id)
+    if config.email is not None:
+        return EmailNotifier(
+            config.email.username, config.email.app_password, config.email.recipient
+        )
     return ConsoleNotifier()
 
 

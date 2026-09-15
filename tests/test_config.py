@@ -40,8 +40,8 @@ def test_load_config_reads_yaml_and_env(tmp_path, monkeypatch):
     config_path = write_config(tmp_path)
     monkeypatch.setenv("UPV_USERNAME", "student1")
     monkeypatch.setenv("UPV_PASSWORD", "hunter2")
-    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
-    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.delenv("SMTP_USERNAME", raising=False)
+    monkeypatch.delenv("SMTP_APP_PASSWORD", raising=False)
 
     config = load_config(config_path)
 
@@ -53,21 +53,36 @@ def test_load_config_reads_yaml_and_env(tmp_path, monkeypatch):
     assert config.slots[0].start_time == "18:00"
     assert config.credentials.username == "student1"
     assert config.credentials.password == "hunter2"
-    assert config.telegram is None
+    assert config.email is None
 
 
-def test_load_config_builds_telegram_config_when_env_vars_present(tmp_path, monkeypatch):
+def test_load_config_builds_email_config_defaulting_recipient_to_sender(tmp_path, monkeypatch):
     config_path = write_config(tmp_path)
     monkeypatch.setenv("UPV_USERNAME", "student1")
     monkeypatch.setenv("UPV_PASSWORD", "hunter2")
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "bot-token")
-    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
+    monkeypatch.setenv("SMTP_USERNAME", "me@gmail.com")
+    monkeypatch.setenv("SMTP_APP_PASSWORD", "abcd efgh ijkl mnop")
+    monkeypatch.delenv("NOTIFY_EMAIL_TO", raising=False)
 
     config = load_config(config_path)
 
-    assert config.telegram is not None
-    assert config.telegram.bot_token == "bot-token"
-    assert config.telegram.chat_id == "12345"
+    assert config.email is not None
+    assert config.email.username == "me@gmail.com"
+    assert config.email.recipient == "me@gmail.com"
+    assert "abcd" not in repr(config.email)
+
+
+def test_load_config_uses_explicit_email_recipient(tmp_path, monkeypatch):
+    config_path = write_config(tmp_path)
+    monkeypatch.setenv("UPV_USERNAME", "student1")
+    monkeypatch.setenv("UPV_PASSWORD", "hunter2")
+    monkeypatch.setenv("SMTP_USERNAME", "me@gmail.com")
+    monkeypatch.setenv("SMTP_APP_PASSWORD", "secret")
+    monkeypatch.setenv("NOTIFY_EMAIL_TO", "other@upv.es")
+
+    config = load_config(config_path)
+
+    assert config.email.recipient == "other@upv.es"
 
 
 def test_load_config_missing_required_env_raises_clear_error(tmp_path, monkeypatch):

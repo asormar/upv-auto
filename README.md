@@ -61,8 +61,12 @@ python -m upv_auto book --now           # skip waiting (local testing only)
 1. Create a **private** GitHub repository and push this code.
 2. Add repository secrets (Settings → Secrets and variables → Actions):
    - `UPV_USERNAME`, `UPV_PASSWORD` — required.
-   - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` — optional; without them,
-     notifications just go to the workflow log (console fallback).
+   - `SMTP_USERNAME`, `SMTP_APP_PASSWORD` — optional email notifications via
+     Gmail. `SMTP_USERNAME` is your Gmail address; `SMTP_APP_PASSWORD` is a
+     Google app password (requires 2-Step Verification:
+     https://myaccount.google.com/apppasswords), never your real password.
+     Without them, notifications just go to the workflow log.
+   - `NOTIFY_EMAIL_TO` — optional recipient; defaults to `SMTP_USERNAME`.
 3. Test manually first: Actions → "Book UPV slot" → "Run workflow" →
    mode `check-login`. Do this on a weekday, well before relying on it.
 4. Once `check-login` succeeds, the workflow is ready to be triggered by

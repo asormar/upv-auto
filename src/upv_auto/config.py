@@ -8,7 +8,7 @@ never end up committed to the repository.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -35,9 +35,10 @@ class WindowConfig:
 
 
 @dataclass(frozen=True)
-class TelegramConfig:
-    bot_token: str
-    chat_id: str
+class EmailConfig:
+    username: str
+    app_password: str = field(repr=False)
+    recipient: str
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,7 @@ class AppConfig:
     window: WindowConfig
     slots: list[Slot]
     credentials: Credentials
-    telegram: TelegramConfig | None
+    email: EmailConfig | None
 
 
 def _require_env(name: str) -> str:
@@ -106,9 +107,18 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         password=_require_env("UPV_PASSWORD"),
     )
 
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    telegram = TelegramConfig(bot_token=bot_token, chat_id=chat_id) if bot_token and chat_id else None
+    smtp_username = os.environ.get("SMTP_USERNAME")
+    smtp_app_password = os.environ.get("SMTP_APP_PASSWORD")
+    email = (
+        EmailConfig(
+            username=smtp_username,
+            app_password=smtp_app_password,
+            # Defaults to emailing yourself.
+            recipient=os.environ.get("NOTIFY_EMAIL_TO") or smtp_username,
+        )
+        if smtp_username and smtp_app_password
+        else None
+    )
 
     return AppConfig(
         timezone=timezone,
@@ -116,5 +126,5 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         window=window,
         slots=slots,
         credentials=credentials,
-        telegram=telegram,
+        email=email,
     )
