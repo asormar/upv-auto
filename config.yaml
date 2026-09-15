@@ -1,0 +1,21 @@
+timezone: Europe/Madrid
+
+upv:
+  entry_url: https://intranet.upv.es/pls/soalu/est_intranet.Ni_portal_n?P_IDIOMA=c
+  session_check_url: https://intranet.upv.es/pls/soalu/est_intranet.Ni_portal_n?P_IDIOMA=c
+
+window:
+  weekday: saturday
+  opens_at: "10:00:00"
+  closes_at: "10:03:00"
+  retry_interval_seconds: 1.5
+
+# Preferred slot first, then alternatives tried in order if a preferred one is taken.
+# day_offset_days is relative to "today" (the day the booking window opens),
+# e.g. 0 = today, 7 = the same weekday next week.
+# Replace the placeholder facility/sport values once the real ones are known.
+slots:
+  - facility: "TODO"
+    sport: "TODO"
+    day_offset_days: 0
+    start_time: "18:00"

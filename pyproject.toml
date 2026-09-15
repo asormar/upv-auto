@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "upv-auto"
+version = "0.1.0"
+description = "Automates booking a UPV sports facility slot: Playwright handles CAS login, httpx performs the fast booking requests."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # Pinned: the CI browser cache is keyed on this file, so the version must not float.
+    "playwright==1.62.0",
+    "httpx>=0.28,<0.29",
+    "pyyaml>=6.0",
+    "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
