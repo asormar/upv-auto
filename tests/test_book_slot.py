@@ -8,7 +8,14 @@ from fakes import FakeAuthenticator, FakeBookingClient, FakeClock, FakeNotifier,
 from upv_auto.app.book_slot import BookSlotUseCase
 from upv_auto.config import AppConfig, UpvConfig, WindowConfig
 from upv_auto.domain.errors import AuthenticationFailed
-from upv_auto.domain.models import Activity, BookingOutcome, BookingResult, Credentials, Slot
+from upv_auto.domain.models import (
+    Activity,
+    BookingOutcome,
+    BookingResult,
+    BookingTarget,
+    Credentials,
+    Slot,
+)
 
 TZ = ZoneInfo("Europe/Madrid")
 
@@ -16,7 +23,13 @@ SLOT_A = Slot(group_code="MUS074")
 SLOT_B = Slot(group_code="MUS075")
 
 
-def make_config(slots: list[Slot], *, retry_interval_seconds: float = 1.5) -> AppConfig:
+def make_config(
+    slots: list[Slot],
+    *,
+    retry_interval_seconds: float = 1.5,
+    bookings: list[BookingTarget] | None = None,
+) -> AppConfig:
+    """`slots` builds a single booking (preferred + alternatives) unless `bookings` is given."""
     return AppConfig(
         timezone="Europe/Madrid",
         upv=UpvConfig(entry_url="https://example.test/entry", session_check_url="https://example.test/entry"),
@@ -27,7 +40,7 @@ def make_config(slots: list[Slot], *, retry_interval_seconds: float = 1.5) -> Ap
             retry_interval_seconds=retry_interval_seconds,
         ),
         activity=Activity(campus="V", tipoact="6894", codacti="21948", name="MUSCULACION"),
-        slots=slots,
+        bookings=bookings if bookings is not None else [BookingTarget(options=tuple(slots))],
         credentials=Credentials(username="user", password="secret"),
         email=None,
     )
@@ -215,3 +228,75 @@ def test_skip_wait_outside_schedule_still_gets_a_full_retry_window():
 
     assert result == 0
     assert len(booking_client.calls) == 2
+
+
+SLOT_C = Slot(group_code="MUS037")
+
+
+class RoutingBookingClient:
+    """Replays a separate outcome sequence per group code."""
+
+    def __init__(self, outcomes_by_code: dict[str, list]) -> None:
+        self._outcomes = {code: list(items) for code, items in outcomes_by_code.items()}
+        self.calls: list[str] = []
+
+    def book(self, session, slot):
+        self.calls.append(slot.group_code)
+        return self._outcomes[slot.group_code].pop(0)
+
+
+def _run_with_router(config: AppConfig, router: RoutingBookingClient):
+    clock = FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ))
+    notifier = FakeNotifier()
+    use_case = BookSlotUseCase(
+        authenticator=FakeAuthenticator(),
+        verifier=FakeVerifier(valid=True),
+        booking_client=router,
+        notifier=notifier,
+        clock=clock,
+        config=config,
+    )
+    return use_case.execute(skip_wait=True), notifier, clock
+
+
+def test_books_every_target_not_just_the_first():
+    config = make_config([], bookings=[BookingTarget((SLOT_A,)), BookingTarget((SLOT_B,))])
+    router = RoutingBookingClient(
+        {"MUS074": [BookingResult(BookingOutcome.BOOKED)], "MUS075": [BookingResult(BookingOutcome.BOOKED)]}
+    )
+
+    result, notifier, _ = _run_with_router(config, router)
+
+    assert result == 0
+    assert router.calls == ["MUS074", "MUS075"]
+    assert notifier.messages[-1].startswith("Booked 2/2: MUS074, MUS075")
+
+
+def test_targets_are_tried_round_robin_while_not_open():
+    config = make_config([], bookings=[BookingTarget((SLOT_A,)), BookingTarget((SLOT_B,))])
+    not_open = BookingResult(BookingOutcome.NOT_OPEN_YET)
+    booked = BookingResult(BookingOutcome.BOOKED)
+    router = RoutingBookingClient({"MUS074": [not_open, booked], "MUS075": [not_open, booked]})
+
+    result, _, clock = _run_with_router(config, router)
+
+    assert result == 0
+    assert router.calls == ["MUS074", "MUS075", "MUS074", "MUS075"]
+    assert clock.sleep_calls == [1.5]  # one pause per round, not per target
+
+
+def test_partial_success_reports_each_target_and_exits_non_zero():
+    config = make_config(
+        [], bookings=[BookingTarget((SLOT_A,)), BookingTarget((SLOT_B, SLOT_C))]
+    )
+    taken = BookingResult(BookingOutcome.TAKEN)
+    router = RoutingBookingClient(
+        {"MUS074": [BookingResult(BookingOutcome.BOOKED)], "MUS075": [taken], "MUS037": [taken]}
+    )
+
+    result, notifier, _ = _run_with_router(config, router)
+
+    assert result == 1
+    summary = notifier.messages[-1]
+    assert summary.startswith("Booked 1/2: MUS074")
+    assert "MUS075 (alternatives: MUS037): all groups taken" in summary

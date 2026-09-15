@@ -24,8 +24,7 @@ from upv_auto.adapters.email import EmailNotifier
 from upv_auto.app.book_slot import BookSlotUseCase
 from upv_auto.app.check_login import check_login
 from upv_auto.app.list_groups import list_groups
-from upv_auto.config import AppConfig, ConfigError, load_config, validate_group_code
-from upv_auto.domain.models import Slot
+from upv_auto.config import AppConfig, ConfigError, load_config, parse_booking_spec
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +73,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--group",
         action="append",
         dest="groups",
-        metavar="CODE",
-        help="Group code to book instead of the configured slots; repeat for alternatives.",
+        metavar="CODES",
+        help=(
+            "Booking to make instead of the configured ones: 'MUS021' or 'MUS021,MUS036' "
+            "(preferred first, then alternatives). Repeat for several bookings."
+        ),
     )
 
     return parser.parse_args(argv)
@@ -88,8 +90,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config = load_config(args.config)
         if getattr(args, "groups", None):
-            slots = [Slot(group_code=validate_group_code(code)) for code in args.groups]
-            config = dataclasses.replace(config, slots=slots)
+            bookings = [parse_booking_spec(spec) for spec in args.groups]
+            config = dataclasses.replace(config, bookings=bookings)
     except ConfigError as exc:
         logger.error(str(exc))
         return 1

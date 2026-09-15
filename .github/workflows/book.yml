@@ -16,7 +16,7 @@ on:
         type: boolean
         default: false
       groups:
-        description: "book only: space-separated group codes overriding config.yaml, e.g. MUS075 MUS074"
+        description: "book only: bookings overriding config.yaml, space-separated; commas add alternatives, e.g. MUS021 MUS022,MUS037"
         type: string
         default: ""
 

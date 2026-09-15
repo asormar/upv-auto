@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from upv_auto.config import ConfigError, load_config
+from upv_auto.config import ConfigError, load_config, parse_booking_spec
 from upv_auto.domain.models import Credentials
 
 CONFIG_YAML = """
@@ -24,9 +24,10 @@ activity:
   tipoact: "6894"
   codacti: "21948"
 
-slots:
+bookings:
   - group_code: MUS074
-  - group_code: MUS075
+    alternatives: [MUS075]
+  - group_code: MUS021
 """
 
 
@@ -51,8 +52,9 @@ def test_load_config_reads_yaml_and_env(tmp_path, monkeypatch):
     assert config.window.retry_interval_seconds == 1.5
     assert config.activity.campus == "V"
     assert config.activity.codacti == "21948"
-    assert len(config.slots) == 2
-    assert config.slots[0].group_code == "MUS074"
+    assert len(config.bookings) == 2
+    assert [s.group_code for s in config.bookings[0].options] == ["MUS074", "MUS075"]
+    assert config.bookings[1].label == "MUS021"
     assert config.credentials.username == "student1"
     assert config.credentials.password == "hunter2"
     assert config.email is None
@@ -120,3 +122,11 @@ def test_credentials_repr_hides_password():
 
     assert "student1" in text
     assert "hunter2" not in text
+
+
+def test_parse_booking_spec_supports_alternatives_and_validates_codes():
+    target = parse_booking_spec("MUS022, MUS037")
+
+    assert [s.group_code for s in target.options] == ["MUS022", "MUS037"]
+    with pytest.raises(ConfigError, match="bad"):
+        parse_booking_spec("MUS022,bad")

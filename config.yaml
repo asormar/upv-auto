@@ -19,8 +19,8 @@ activity:
   tipoact: "6894"
   codacti: "21948"
 
-# Preferred group first, then alternatives tried in order if a preferred one
-# is taken. Group codes look like "MUS074" (see `list-groups`).
-slots:
-  - group_code: MUS074
-  - group_code: MUS075
+# Every entry is a separate place the bot tries to secure. Within an entry,
+# `group_code` is preferred and `alternatives` are tried in order if it is full.
+bookings:
+  - group_code: MUS021 # Tuesday 12:30-13:30
+  - group_code: MUS022 # Tuesday 13:30-14:30

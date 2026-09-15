@@ -31,6 +31,22 @@ class Slot:
 
 
 @dataclass(frozen=True)
+class BookingTarget:
+    """One place to secure: the preferred group first, then alternatives if it is full."""
+
+    options: tuple[Slot, ...]
+
+    def __post_init__(self) -> None:
+        if not self.options:
+            raise ValueError("A booking target needs at least one group")
+
+    @property
+    def label(self) -> str:
+        preferred, *alternatives = (slot.label for slot in self.options)
+        return f"{preferred} (alternatives: {', '.join(alternatives)})" if alternatives else preferred
+
+
+@dataclass(frozen=True)
 class Activity:
     """The UPV sports activity (campus + programme + activity) whose groups are booked."""
 

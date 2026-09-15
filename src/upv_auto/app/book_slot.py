@@ -1,20 +1,19 @@
-"""Use case: wait for the booking window and attempt to book a slot.
+"""Use case: wait for the booking window and secure every configured booking.
 
 Algorithm:
 1. Log in and verify the session, retrying transient failures (see
    `authenticate`); on failure, notify and stop (exit code 1).
 2. Wait until the window opens (coarse sleep while more than 5s remain, then
-   fine 50ms steps), unless `skip_wait` is set (used for local testing).
-3. Loop until the window closes, trying the current slot (preferred first,
-   then alternatives in configured order):
-   - BOOKED -> notify success, stop (0).
-   - TAKEN -> advance to the next slot; if none are left, notify and stop (1).
-   - NOT_OPEN_YET / ERROR -> sleep `retry_interval_seconds`, retry the same slot.
+   fine 50ms steps). With `skip_wait` (testing), the window opens immediately
+   and keeps its configured length.
+3. Until the window closes, go round-robin over every pending booking target,
+   trying its current group (preferred first, then alternatives):
+   - BOOKED -> that target is done.
+   - TAKEN -> move that target to its next alternative; none left -> done, failed.
+   - NOT_OPEN_YET / ERROR -> retry next round, after `retry_interval_seconds`.
    - SESSION_EXPIRED -> re-login at most once; a second expiry gives up (1).
-   - NotImplementedError from the booking client -> notify and stop (1)
-     immediately, without retrying (the adapter is not wired to a real
-     endpoint yet, so retrying would just spin).
-4. If the window closes without success, notify a timeout with the attempt count.
+   - NotImplementedError from the booking client -> notify and stop (1).
+4. Send one summary notification. Exit 0 only if every target was booked.
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from datetime import datetime
 
 from upv_auto.app.authenticate import authenticate
 from upv_auto.config import AppConfig
-from upv_auto.domain.models import BookingOutcome, BookingWindow, Session
+from upv_auto.domain.models import BookingOutcome, BookingTarget, BookingWindow, Session, Slot
 from upv_auto.ports import Authenticator, BookingClient, Clock, Notifier, SessionVerifier
 
 logger = logging.getLogger(__name__)
@@ -107,53 +106,87 @@ class BookSlotUseCase:
                 self._clock.sleep(_FINE_STEP_SECONDS)
 
     def _book_loop(self, session: Session, window: BookingWindow) -> int:
-        slots = list(self._config.slots)
-        slot_index = 0
+        """Round-robin over every booking target so none waits for another to finish."""
+        pending = [_TargetProgress(target) for target in self._config.bookings]
+        finished: list[_TargetProgress] = []
         attempts = 0
         relogin_used = False
 
-        while self._clock.now() < window.closes_at:
-            if slot_index >= len(slots):
-                logger.info("All configured slots are taken")
-                self._notifier.notify("All configured slots are taken. Booking failed.")
-                return 1
+        while pending and self._clock.now() < window.closes_at:
+            needs_retry = False
 
-            slot = slots[slot_index]
-
-            try:
+            for progress in list(pending):
+                slot = progress.current_slot
                 attempts += 1
-                result = self._booking_client.book(session, slot)
-            except NotImplementedError as exc:
-                logger.error("Booking adapter not implemented: %s", exc)
-                self._notifier.notify(f"Booking adapter not implemented yet: {exc}")
-                return 1
-
-            if result.outcome is BookingOutcome.BOOKED:
-                logger.info("Booked %s after %d attempt(s)", slot.label, attempts)
-                self._notifier.notify(f"Booked slot {slot.label} after {attempts} attempt(s).")
-                return 0
-
-            if result.outcome is BookingOutcome.TAKEN:
-                logger.info("Slot %s is taken, trying next alternative", slot.label)
-                slot_index += 1
-                continue
-
-            if result.outcome is BookingOutcome.SESSION_EXPIRED:
-                if relogin_used:
-                    logger.error("Session expired again after re-login; giving up")
-                    self._notifier.notify("Session expired again after re-login. Giving up.")
+                try:
+                    result = self._booking_client.book(session, slot)
+                except NotImplementedError as exc:
+                    logger.error("Booking adapter not implemented: %s", exc)
+                    self._notifier.notify(f"Booking adapter not implemented yet: {exc}")
                     return 1
-                relogin_used = True
-                logger.info("Session expired, re-authenticating")
-                new_session = self._login_and_verify()
-                if new_session is None:
-                    return 1
-                session = new_session
-                continue
 
-            # NOT_OPEN_YET or ERROR: retry the same slot after the configured interval.
-            self._clock.sleep(window.retry_interval_seconds)
+                if result.outcome is BookingOutcome.BOOKED:
+                    logger.info("Booked %s after %d total attempt(s)", slot.label, attempts)
+                    progress.booked = slot
+                elif result.outcome is BookingOutcome.TAKEN:
+                    logger.info("Group %s is taken", slot.label)
+                    progress.index += 1
+                elif result.outcome is BookingOutcome.SESSION_EXPIRED:
+                    if relogin_used:
+                        logger.error("Session expired again after re-login; giving up")
+                        self._notifier.notify(
+                            self._summary(finished + pending, "Session expired again after re-login. Giving up.")
+                        )
+                        return 1
+                    relogin_used = True
+                    logger.info("Session expired, re-authenticating")
+                    new_session = self._login_and_verify()
+                    if new_session is None:
+                        return 1
+                    session = new_session
+                    break  # restart the round with the fresh session
+                else:
+                    # NOT_OPEN_YET or ERROR: retry this target on the next round.
+                    needs_retry = True
 
-        logger.info("Booking window closed after %d attempt(s)", attempts)
-        self._notifier.notify(f"Booking window closed after {attempts} attempt(s) without success.")
-        return 1
+                if progress.is_finished:
+                    pending.remove(progress)
+                    finished.append(progress)
+
+            if pending and needs_retry:
+                self._clock.sleep(window.retry_interval_seconds)
+
+        closed_note = "" if not pending else f"Booking window closed after {attempts} attempt(s)."
+        self._notifier.notify(self._summary(finished + pending, closed_note))
+        logger.info("Booking finished after %d attempt(s)", attempts)
+        return 0 if all(p.booked for p in finished + pending) else 1
+
+    @staticmethod
+    def _summary(progresses: list[_TargetProgress], note: str) -> str:
+        booked = [p for p in progresses if p.booked]
+        lines = [f"Booked {len(booked)}/{len(progresses)}: " + (", ".join(p.booked.label for p in booked) or "none")]
+        for progress in progresses:
+            if progress.booked:
+                lines.append(f"- {progress.target.label}: booked {progress.booked.label}")
+            elif progress.is_finished:
+                lines.append(f"- {progress.target.label}: all groups taken")
+            else:
+                lines.append(f"- {progress.target.label}: not booked")
+        if note:
+            lines.append(note)
+        return "\n".join(lines)
+
+
+class _TargetProgress:
+    def __init__(self, target: BookingTarget) -> None:
+        self.target = target
+        self.index = 0
+        self.booked: Slot | None = None
+
+    @property
+    def current_slot(self) -> Slot:
+        return self.target.options[self.index]
+
+    @property
+    def is_finished(self) -> bool:
+        return self.booked is not None or self.index >= len(self.target.options)

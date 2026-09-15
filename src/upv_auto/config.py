@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-from upv_auto.domain.models import Activity, Credentials, Slot
+from upv_auto.domain.models import Activity, BookingTarget, Credentials, Slot
 
 
 class ConfigError(RuntimeError):
@@ -51,7 +51,7 @@ class AppConfig:
     upv: UpvConfig
     window: WindowConfig
     activity: Activity
-    slots: list[Slot]
+    bookings: list[BookingTarget]
     credentials: Credentials
     email: EmailConfig | None
 
@@ -73,8 +73,18 @@ def _require_key(raw: dict, key: str) -> object:
     return raw[key]
 
 
-def _require_group_code(slot_raw: dict) -> str:
-    return validate_group_code(str(_require_key(slot_raw, "group_code")))
+def _parse_booking(booking_raw: dict) -> BookingTarget:
+    codes = [str(_require_key(booking_raw, "group_code"))]
+    codes += [str(code) for code in booking_raw.get("alternatives") or []]
+    return BookingTarget(options=tuple(Slot(group_code=validate_group_code(c)) for c in codes))
+
+
+def parse_booking_spec(spec: str) -> BookingTarget:
+    """Parse 'MUS021' or 'MUS021,MUS036' (preferred first, then alternatives)."""
+    codes = [code.strip() for code in spec.split(",") if code.strip()]
+    if not codes:
+        raise ConfigError(f"Empty booking spec: '{spec}'")
+    return BookingTarget(options=tuple(Slot(group_code=validate_group_code(c)) for c in codes))
 
 
 def validate_group_code(group_code: str) -> str:
@@ -98,7 +108,7 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
     upv_raw = _require_key(raw, "upv")
     window_raw = _require_key(raw, "window")
     activity_raw = _require_key(raw, "activity")
-    slots_raw = _require_key(raw, "slots")
+    bookings_raw = _require_key(raw, "bookings")
 
     upv = UpvConfig(
         entry_url=_require_key(upv_raw, "entry_url"),
@@ -116,7 +126,9 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         codacti=str(_require_key(activity_raw, "codacti")),
         name=str(_require_key(activity_raw, "name")),
     )
-    slots = [Slot(group_code=_require_group_code(s)) for s in slots_raw]
+    bookings = [_parse_booking(b) for b in bookings_raw]
+    if not bookings:
+        raise ConfigError("Config key 'bookings' must list at least one booking")
 
     credentials = Credentials(
         username=_require_env("UPV_USERNAME"),
@@ -141,7 +153,7 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         upv=upv,
         window=window,
         activity=activity,
-        slots=slots,
+        bookings=bookings,
         credentials=credentials,
         email=email,
     )

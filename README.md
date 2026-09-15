@@ -53,8 +53,9 @@ cp .env.example .env          # fill in UPV_USERNAME / UPV_PASSWORD
 ```
 
 Edit `config.yaml`: the `activity` section picks the UPV sports activity
-(campus, `tipoact`, `codacti`); `slots` lists group codes to try, preferred
-first, e.g.:
+(campus, `tipoact`, `codacti`); `bookings` lists every place to secure. Each
+entry is booked independently; within an entry, `group_code` is preferred and
+`alternatives` are tried in order if it is full, e.g.:
 
 ```yaml
 activity:
@@ -63,15 +64,24 @@ activity:
   tipoact: "6894"
   codacti: "21948"
 
-slots:
-  - group_code: MUS074
-  - group_code: MUS075
+bookings:
+  - group_code: MUS021            # Tuesday 12:30-13:30
+  - group_code: MUS022            # Tuesday 13:30-14:30
+    alternatives: [MUS037]        # Wednesday 13:30-14:30 if MUS022 is full
 ```
+
+All bookings are attempted round-robin during the window, so one never waits
+for another. You get a single summary email (`Booked 2/2: ...`), and the run
+exits non-zero unless every booking succeeded.
+
+For one-off tests, the workflow's `groups` input (or `book --group`, repeatable)
+overrides `bookings`: space-separated bookings, commas for alternatives, e.g.
+`MUS021 MUS022,MUS037`. Combine with `now` to start immediately.
 
 Don't know the group codes yet? Run `python -m upv_auto list-groups` (see
 below) to print every group for the configured activity along with its
 current state and free places, then pick codes from there. Alternatives are
-tried in order if the preferred group is taken.
+tried in order if the preferred group is full.
 
 Run the tests (no network, no real browser):
 
