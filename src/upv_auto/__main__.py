@@ -81,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
     clock = SystemClock(timezone=config.timezone)
 
     if args.command == "check-login":
-        ok = check_login(config.credentials, authenticator, verifier, notifier)
+        ok = check_login(config.credentials, authenticator, verifier, notifier, clock)
         return 0 if ok else 1
 
     if args.command == "book":

@@ -23,16 +23,23 @@ class FakeClock:
 
 
 class FakeAuthenticator:
-    """Returns a fresh Session on each call, or raises a configured error."""
+    """Returns a fresh Session on each call, or raises a configured error.
 
-    def __init__(self, error: Exception | None = None) -> None:
+    `error` is raised on every call; `errors` are raised one per call, in order,
+    after which logins succeed.
+    """
+
+    def __init__(self, error: Exception | None = None, errors: list[Exception] | None = None) -> None:
         self._error = error
+        self._errors = list(errors or [])
         self.calls = 0
 
     def login(self, credentials) -> Session:
         self.calls += 1
         if self._error is not None:
             raise self._error
+        if self._errors:
+            raise self._errors.pop(0)
         return Session(cookies=[], user_agent=f"fake-agent-{self.calls}")
 
 

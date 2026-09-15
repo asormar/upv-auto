@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from upv_auto.domain.errors import AuthenticationBlocked, AuthenticationFailed
+from upv_auto.app.authenticate import authenticate
 from upv_auto.domain.models import Credentials
-from upv_auto.ports import Authenticator, Notifier, SessionVerifier
+from upv_auto.ports import Authenticator, Clock, Notifier, SessionVerifier
 
 logger = logging.getLogger(__name__)
 
@@ -16,22 +16,11 @@ def check_login(
     authenticator: Authenticator,
     verifier: SessionVerifier,
     notifier: Notifier,
+    clock: Clock,
 ) -> bool:
     """Attempt a login and session verification. Returns True iff both succeed."""
-    try:
-        session = authenticator.login(credentials)
-    except AuthenticationBlocked as exc:
-        logger.warning("Login blocked: %s", exc)
-        notifier.notify(f"Login blocked (captcha/2FA/unexpected page): {exc}")
-        return False
-    except AuthenticationFailed as exc:
-        logger.warning("Login failed: %s", exc)
-        notifier.notify(f"Login failed: {exc}")
-        return False
-
-    if not verifier.is_valid(session):
-        logger.warning("Session verification failed after login")
-        notifier.notify("Login appeared to succeed but session verification failed.")
+    session = authenticate(credentials, authenticator, verifier, notifier, clock)
+    if session is None:
         return False
 
     logger.info("Login check OK")

@@ -8,6 +8,13 @@ class AuthenticationFailed(Exception):
     """
 
 
+class AuthenticationUnavailable(Exception):
+    """The UPV servers could not complete the login right now (5xx, timeout, network error).
+
+    Transient by nature, so it is safe to retry. Bad credentials never raise this.
+    """
+
+
 class AuthenticationBlocked(Exception):
     """Login cannot proceed safely: captcha, 2FA/OTP, or another unexpected page.
 

@@ -1,7 +1,8 @@
 """Use case: wait for the booking window and attempt to book a slot.
 
 Algorithm:
-1. Log in and verify the session; on failure, notify and stop (exit code 1).
+1. Log in and verify the session, retrying transient failures (see
+   `authenticate`); on failure, notify and stop (exit code 1).
 2. Wait until the window opens (coarse sleep while more than 5s remain, then
    fine 50ms steps), unless `skip_wait` is set (used for local testing).
 3. Loop until the window closes, trying the current slot (preferred first,
@@ -21,8 +22,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
+from upv_auto.app.authenticate import authenticate
 from upv_auto.config import AppConfig
-from upv_auto.domain.errors import AuthenticationBlocked, AuthenticationFailed
 from upv_auto.domain.models import BookingOutcome, BookingWindow, Session
 from upv_auto.ports import Authenticator, BookingClient, Clock, Notifier, SessionVerifier
 
@@ -66,23 +67,13 @@ class BookSlotUseCase:
     # -- steps -----------------------------------------------------------
 
     def _login_and_verify(self) -> Session | None:
-        try:
-            session = self._authenticator.login(self._config.credentials)
-        except AuthenticationBlocked as exc:
-            logger.warning("Login blocked: %s", exc)
-            self._notifier.notify(f"Login blocked (captcha/2FA/unexpected page): {exc}")
-            return None
-        except AuthenticationFailed as exc:
-            logger.warning("Login failed: %s", exc)
-            self._notifier.notify(f"Login failed: {exc}")
-            return None
-
-        if not self._verifier.is_valid(session):
-            logger.warning("Session verification failed after login")
-            self._notifier.notify("Login appeared to succeed but session verification failed.")
-            return None
-
-        return session
+        return authenticate(
+            self._config.credentials,
+            self._authenticator,
+            self._verifier,
+            self._notifier,
+            self._clock,
+        )
 
     def _compute_window(self) -> BookingWindow:
         now = self._clock.now()

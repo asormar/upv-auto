@@ -12,11 +12,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-from playwright.sync_api import Page
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import Page, Response
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
-from upv_auto.domain.errors import AuthenticationBlocked, AuthenticationFailed
+from upv_auto.domain.errors import (
+    AuthenticationBlocked,
+    AuthenticationFailed,
+    AuthenticationUnavailable,
+)
 from upv_auto.domain.models import Credentials, Session
 
 logger = logging.getLogger(__name__)
@@ -52,20 +57,42 @@ class PlaywrightCasAuthenticator:
             try:
                 context = browser.new_context()
                 page = context.new_page()
+                navigation_statuses: list[int] = []
+                page.on(
+                    "response",
+                    lambda response: self._record_navigation(page, response, navigation_statuses),
+                )
                 try:
-                    return self._do_login(page, context, credentials)
-                except (AuthenticationFailed, AuthenticationBlocked):
+                    return self._do_login(page, context, credentials, navigation_statuses)
+                except (AuthenticationFailed, AuthenticationBlocked, AuthenticationUnavailable):
                     self._save_screenshot(page)
                     raise
-                except PlaywrightTimeoutError as exc:
+                except PlaywrightError as exc:
+                    # Timeouts and network errors (TimeoutError subclasses Error).
                     self._save_screenshot(page)
-                    raise AuthenticationFailed(f"Timed out during login: {exc}") from exc
+                    raise AuthenticationUnavailable(f"Browser error during login: {exc}") from exc
             finally:
                 browser.close()
 
-    def _do_login(self, page: Page, context, credentials: Credentials) -> Session:
+    @staticmethod
+    def _record_navigation(page: Page, response: Response, statuses: list[int]) -> None:
+        if response.request.is_navigation_request() and response.frame == page.main_frame:
+            statuses.append(response.status)
+
+    @staticmethod
+    def _raise_if_server_error(statuses: list[int], stage: str) -> None:
+        if statuses and statuses[-1] >= 500:
+            raise AuthenticationUnavailable(f"UPV returned HTTP {statuses[-1]} {stage}")
+
+    def _do_login(
+        self, page: Page, context, credentials: Credentials, navigation_statuses: list[int]
+    ) -> Session:
         page.goto(self._entry_url)
-        page.wait_for_selector("#username", timeout=LOGIN_TIMEOUT_MS)
+        self._raise_if_server_error(navigation_statuses, "when opening the login page")
+        try:
+            page.wait_for_selector("#username", timeout=LOGIN_TIMEOUT_MS)
+        except PlaywrightTimeoutError as exc:
+            raise AuthenticationUnavailable("CAS login form did not load") from exc
 
         self._check_blocked(page)
 
@@ -79,11 +106,19 @@ class PlaywrightCasAuthenticator:
                 timeout=LOGIN_TIMEOUT_MS,
             )
         except PlaywrightTimeoutError:
+            self._raise_if_server_error(navigation_statuses, "after submitting credentials")
             self._check_blocked(page)
             error_text = self._read_error_text(page)
             if error_text:
                 raise AuthenticationFailed(f"CAS login rejected: {error_text}")
-            raise AuthenticationFailed("CAS login did not complete: still on cas.upv.es")
+            if page.locator("#password").count() > 0:
+                # Form is shown again with no readable error: most likely rejected.
+                # Treated as non-retryable so bad credentials never get hammered.
+                raise AuthenticationFailed("CAS login did not complete: still on cas.upv.es")
+            raise AuthenticationUnavailable("CAS did not respond after submitting credentials")
+
+        page.wait_for_load_state()
+        self._raise_if_server_error(navigation_statuses, "after login redirect")
 
         host = urlparse(page.url).hostname or ""
         if CAS_HOST in host:
