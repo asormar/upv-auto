@@ -9,3 +9,6 @@ storage_state*.json
 
 # Local agent tooling
 .atl/
+.agents/
+.claude/
+skills-lock.json

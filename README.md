@@ -112,6 +112,36 @@ python -m upv_auto book                 # wait for the window, attempt to book
 python -m upv_auto book --now           # skip waiting (local testing only)
 ```
 
+## Web UI
+
+A local web interface for picking what to book, instead of editing
+`config.yaml` by hand. It is another driver over the same use cases: the API
+(`adapters/web/api.py`) calls `fetch_schedule` for the real UPV table and
+writes the chosen groups back into `config.yaml`; the booking itself still
+runs on GitHub Actions on Saturday.
+
+```bash
+pip install -e ".[web]"
+cd web && npm install && npm run build && cd ..
+python -m upv_auto serve            # http://127.0.0.1:8000
+```
+
+`serve --demo` serves the sample table from `tests/fixtures/` instead of
+logging into UPV — useful while working on the interface (it writes to
+whatever `--config` points at, so point it at a copy).
+
+For front-end development with hot reload, run the API and Vite side by side:
+
+```bash
+python -m upv_auto serve --demo --config config.demo.yaml
+cd web && npm run dev               # proxies /api to port 8000
+```
+
+The UI shows one day at a time (the UPV week, day by day), your booking queue
+in order, and the UPV limit as bubbles: at most 10 activity sessions at once,
+of which at most 6 of this activity. Adding a group beyond the limit is
+refused by the API, not just hidden in the UI.
+
 ## GitHub Actions setup
 
 1. Create a **private** GitHub repository and push this code.
