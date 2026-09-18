@@ -1,0 +1,849 @@
+/* Design tokens from the chosen direction: agenda layout, soft slate palette.
+   Colours only cross-fade while the theme is switching (`.theming`), so hover
+   and press stay instant. */
+:root {
+  --spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* For things that travel across the screen and should visibly get there. */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --bg: #eef1f6;
+  --card: #ffffff;
+  --ink: #1e2330;
+  --body: #454b59;
+  --muted: #5c6371;
+  --accent: #c23f5a;
+  --accent-ink: #b3374f;
+  --accent-soft: #fce9ee;
+  --accent-line: #f0c2cc;
+  --ok: #2e7552;
+  --ok-bg: #e3f2ea;
+  --ok-line: #bcdfcb;
+  --warn-bg: #fff3e6;
+  --warn-ink: #8a4b12;
+  --line: #dfe3ea;
+  --dot-empty: #9aa2b0;
+  --shadow: 0 1px 2px rgba(30, 35, 48, 0.06), 0 8px 24px rgba(30, 35, 48, 0.05);
+  --knob: #ffffff;
+  --knob-ink: #c23f5a;
+  --switch: #e2e6ee;
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #1c202b;
+  --card: #262b38;
+  --ink: #eef0f5;
+  --body: #c5cad6;
+  --muted: #a3a9b7;
+  --accent: #f08a9b;
+  --accent-ink: #f4a0ae;
+  --accent-soft: #3a2c37;
+  --accent-line: #5e3e4a;
+  --ok: #86d3a9;
+  --ok-bg: #23372f;
+  --ok-line: #3c6450;
+  --warn-bg: #3a3326;
+  --warn-ink: #e8c79a;
+  --line: #333948;
+  --dot-empty: #6b7386;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
+  --knob: #262b38;
+  --knob-ink: #f4a0ae;
+  --switch: #333948;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  /* No blue flash on tap: every control has its own :active feedback. */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  /* This is an app screen, not a document: no pull-to-refresh, no page bounce. */
+  overscroll-behavior: none;
+}
+body {
+  overscroll-behavior: none;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Figtree", -apple-system, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+html.theming,
+html.theming * {
+  transition: background-color 300ms var(--ease-out), color 300ms var(--ease-out),
+    box-shadow 300ms var(--ease-out), border-color 300ms var(--ease-out);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+button,
+[role="button"] {
+  font: inherit;
+  cursor: pointer;
+  /* Fires click without the double-tap-zoom wait, and a long press does not
+     select the label the way it does on a plain web page. */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.press {
+  transition: transform 120ms var(--ease-out);
+}
+.press:active {
+  transform: scale(0.97);
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- shell ---------- */
+.shell {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 28px 40px 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 36px;
+  align-items: start;
+}
+
+.topbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  padding-bottom: 8px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 17px;
+  white-space: nowrap;
+}
+.brand .mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.status.warn {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+}
+
+.demobar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-radius: 16px;
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.demobar code {
+  font-size: 13px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.18);
+}
+
+/* ---------- theme toggle ---------- */
+.toggle {
+  position: relative;
+  width: 80px;
+  height: 44px;
+  border: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--switch);
+  box-shadow: var(--shadow);
+  flex: none;
+}
+.toggle .track-icon {
+  position: absolute;
+  top: 14px;
+  color: var(--muted);
+  display: flex;
+}
+.toggle .knob {
+  --knob-x: 0px;
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--knob);
+  color: var(--knob-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(20, 24, 34, 0.18);
+  transform: translateX(var(--knob-x));
+  transition: transform 220ms var(--ease-out);
+}
+:root[data-theme="dark"] .toggle .knob {
+  --knob-x: 36px;
+}
+.toggle:active .knob {
+  transform: translateX(var(--knob-x)) scale(0.92);
+}
+.toggle .ico {
+  position: absolute;
+  display: flex;
+  transition: transform 260ms var(--ease-out), opacity 200ms var(--ease-out);
+}
+.toggle .sun {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+.toggle .moon {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.5);
+}
+:root[data-theme="dark"] .toggle .sun {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.5);
+}
+:root[data-theme="dark"] .toggle .moon {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+.page-title {
+  /* Shrinks on phones so "Musculación · Campus Vera" stays on one or two lines. */
+  font-size: clamp(28px, 4.5vw, 40px);
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+/* ---------- week bar ---------- */
+.weekbar {
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* The day strip owns horizontal swipes; vertical scrolling stays with the page. */
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+}
+.weekbar::-webkit-scrollbar {
+  display: none;
+}
+.weekbar-track {
+  position: relative;
+  min-width: 100%;
+  width: max-content;
+}
+/* Equal day cells at every width: 1fr columns in a content-sized track make
+   each column as wide as the widest label ("Miércoles"), and share any spare
+   room equally when the strip is wider than its content. */
+.weekbar-base,
+.weekbar-active {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 8px;
+}
+.weekbar-base button,
+.weekbar-active .day {
+  min-width: 104px;
+  min-height: 62px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 14px;
+  text-align: left;
+}
+.weekbar-base button {
+  border: 0;
+  background: var(--card);
+  color: inherit;
+  box-shadow: var(--shadow);
+}
+/* Fallback before the overlay is measured. */
+.weekbar-base button.on,
+.weekbar-active .day {
+  background: var(--ink);
+  color: var(--bg);
+}
+.weekbar-track.has-overlay .weekbar-base button.on {
+  background: var(--card);
+  color: inherit;
+}
+.weekbar .name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.weekbar .note {
+  font-size: 12px;
+  opacity: 0.72;
+}
+
+/* ---------- agenda rail ---------- */
+.rail {
+  position: relative;
+  padding-left: 74px;
+}
+.rail::before {
+  content: "";
+  position: absolute;
+  left: 62px;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 62px;
+  padding: 5px 0;
+}
+.slot .hour {
+  position: absolute;
+  left: -74px;
+  width: 54px;
+  text-align: right;
+  font-size: 13px;
+  color: var(--muted);
+}
+.slot .node {
+  position: absolute;
+  left: -16px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.slot.open .node {
+  background: var(--ok);
+}
+.slot.mine .node {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+/* Enrolled this week: its own green surface, so it never reads as a free hour. */
+.slot.enrolled .node {
+  background: var(--ok);
+  box-shadow: 0 0 0 4px var(--ok-bg);
+}
+.slot.enrolled .block {
+  background: var(--ok-bg);
+  box-shadow: inset 0 0 0 1.5px var(--ok-line);
+}
+.slot.enrolled .block .detail {
+  color: var(--ok);
+}
+.block {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+.slot.dim .block {
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+}
+.slot.mine .block {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent-line);
+}
+.block .when {
+  font-size: 16px;
+  font-weight: 600;
+}
+.block .detail {
+  font-size: 13px;
+  color: var(--muted);
+}
+.slot.mine .block .detail {
+  color: var(--accent-ink);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.tag-enrolled {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ok);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cta {
+  border: 0;
+  border-radius: 999px;
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.cta.ghost {
+  background: rgba(127, 127, 127, 0.14);
+  color: var(--body);
+}
+.cta[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---------- side panel ---------- */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: sticky;
+  top: 20px;
+}
+.card {
+  background: var(--card);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+.card.accent {
+  background: var(--accent-soft);
+  box-shadow: none;
+}
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.queue-row:first-of-type .queue-item {
+  border-top: 0;
+}
+.rank {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.iconbtn {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(127, 127, 127, 0.14);
+  color: var(--body);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---------- limit bubbles ---------- */
+.bubbles {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.bubble {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--dot-empty);
+  transition: background-color 200ms var(--ease-out), box-shadow 200ms var(--ease-out),
+    transform 220ms var(--spring);
+}
+.bubble.held {
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.bubble.queued {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.bubble.just-added {
+  transform: scale(1.18);
+}
+
+.skeleton {
+  border-radius: 16px;
+  background: linear-gradient(90deg, var(--card), var(--line), var(--card));
+  background-size: 300% 100%;
+  animation: shimmer 1.4s linear infinite;
+  min-height: 62px;
+}
+/* Side-panel skeleton: the agenda's blocks, with the cards' radius. */
+.skeleton-panel {
+  border-radius: 22px;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -150% 0;
+  }
+}
+
+/* ---------- mobile ---------- */
+.mobilebar {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  /* The bottom bar already carries refreshing, so the header keeps only
+     identity, state and the theme switch. */
+  .topbar .desktop-only {
+    display: none;
+  }
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px 16px calc(96px + env(safe-area-inset-bottom));
+    gap: 20px;
+  }
+  .panel {
+    position: static;
+  }
+  .weekbar-base button,
+  .weekbar-active .day {
+    min-width: 76px;
+  }
+  .rail {
+    padding-left: 60px;
+  }
+  .rail::before {
+    left: 48px;
+  }
+  .slot .hour {
+    left: -60px;
+    width: 44px;
+  }
+  .block {
+    padding: 12px 14px;
+    gap: 10px;
+    /* Narrow rows stack: text on top, actions on their own full-width line. */
+    flex-wrap: wrap;
+  }
+  .block .when {
+    font-size: 15px;
+  }
+  /* One button stays on the text's line; two need a line of their own. */
+  .actions {
+    gap: 8px;
+  }
+  .actions:has(button + button) {
+    width: 100%;
+  }
+  .actions .cta {
+    flex: 1 1 0;
+    justify-content: center;
+    padding: 0 12px;
+  }
+  /* The green surface and the subtitle already say it; the tag would only
+     steal the width the buttons need. */
+  .tag-enrolled {
+    display: none;
+  }
+  .mobilebar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--card) 86%, transparent);
+    backdrop-filter: blur(20px) saturate(180%);
+    border-top: 1px solid var(--line);
+    z-index: 5;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .mobilebar {
+    background: var(--card);
+    backdrop-filter: none;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cta:hover {
+    filter: brightness(1.05);
+  }
+  .weekbar button:hover,
+  .iconbtn:hover {
+    filter: brightness(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .press,
+  .press:active,
+  .toggle .knob,
+  .toggle .ico,
+  .bubble {
+    transition: opacity 150ms linear;
+    transform: none;
+  }
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* =====================================================================
+   Motion pass. Each block is numbered after the opportunity it implements
+   (1-5 recommended, 6-10 the ones first rejected, kept here to try out).
+   Delete a block to drop that motion; nothing else depends on it.
+   ===================================================================== */
+
+/* 1 · Saving does not flash the whole agenda: buttons only dim if the save
+   takes longer than 150ms, and come back instantly. */
+.cta {
+  transition: transform 120ms var(--ease-out), opacity 150ms var(--ease-out),
+    background-color 160ms ease;
+}
+.cta[disabled] {
+  transition-delay: 0ms, 150ms, 0ms;
+}
+
+/* 2 · Refreshing spins the icon while UPV is being read (it takes seconds). */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  display: inline-flex;
+  animation: spin 800ms linear infinite;
+}
+
+/* 3 · A row changing state cross-fades its surface instead of jumping. */
+.block {
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+/* 4 · Queue rows enter and leave along the same path, at the same pace: in
+   from the right while their slot opens, out to the right while it closes. */
+.queue-row {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 260ms var(--ease-in-out);
+}
+.queue-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+.queue-row .queue-item {
+  transition: opacity 260ms var(--ease-out), transform 260ms var(--ease-out);
+}
+@starting-style {
+  .queue-row {
+    grid-template-rows: 0fr;
+  }
+  .queue-row .queue-item {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+.queue-row.exiting {
+  grid-template-rows: 0fr;
+}
+.queue-row.exiting .queue-item {
+  opacity: 0;
+  transform: translateX(16px);
+}
+
+/* 5 · The agenda fades in when it first loads. Changing day stays instant on
+   purpose: it is the most frequent action on the page. */
+.rail {
+  transition: opacity 180ms var(--ease-out);
+}
+@starting-style {
+  .rail {
+    opacity: 0;
+  }
+}
+
+/* 7 · Elastic day pill. A dark copy of the strip is clipped to the active
+   day; its two edges are registered custom properties so each can move on its
+   own delay (set inline by WeekBar): the pill stretches out of the current day
+   into the next one, then gathers. */
+@property --clip-left {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --clip-right {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+.weekbar-active {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  clip-path: inset(0 var(--clip-right) 0 var(--clip-left) round 16px);
+}
+.weekbar-active.ready {
+  transition-property: --clip-left, --clip-right;
+  transition-timing-function: var(--ease-in-out);
+}
+
+/* 9 · The sample-data warning slides down into place. */
+.demobar {
+  transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out);
+}
+@starting-style {
+  .demobar {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+/* 10 · A bubble that just filled sends out one soft ring. */
+.bubble {
+  position: relative;
+}
+.bubble.just-added::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--accent);
+  animation: ripple 420ms var(--ease-out) forwards;
+}
+@keyframes ripple {
+  from {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+/* 10b · A bubble that just emptied lets its fill shrink away inside the ring,
+   the opposite gesture to the ring going out when it fills. */
+.bubble.just-removed::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: drain 320ms var(--ease-out) forwards;
+}
+@keyframes drain {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble.just-removed::before {
+    animation: none;
+  }
+  .spin {
+    animation: none;
+  }
+  .queue-item,
+  .queue-row .queue-item,
+  .demobar {
+    transition: opacity 150ms linear;
+  }
+  .queue-row {
+    transition: none;
+  }
+  .queue-row.exiting .queue-item {
+    transform: none;
+  }
+  .weekbar-active.ready {
+    transition-property: none !important;
+  }
+  .bubble.just-added::after {
+    animation: none;
+  }
+}
+
+/* The countdown's three numbers sit on one baseline, like a clock. */
+.countdown {
+  display: inline-flex;
+  align-items: baseline;
+  white-space: nowrap;
+}
