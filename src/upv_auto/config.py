@@ -46,6 +46,18 @@ class EmailConfig:
 
 
 @dataclass(frozen=True)
+class LimitsConfig:
+    """How many places UPV lets one person hold at the same time.
+
+    Defaults match the Área de Deportes rules: at most 10 activity sessions,
+    of which at most 6 may be of this activity.
+    """
+
+    max_sessions: int = 10
+    max_per_activity: int = 6
+
+
+@dataclass(frozen=True)
 class AppConfig:
     timezone: str
     upv: UpvConfig
@@ -54,6 +66,29 @@ class AppConfig:
     bookings: list[BookingTarget]
     credentials: Credentials
     email: EmailConfig | None
+    limits: LimitsConfig = field(default_factory=LimitsConfig)
+
+
+def load_env_file(path: str | Path = ".env") -> None:
+    """Load `KEY=value` lines from a .env file into the environment.
+
+    Real environment variables always win, so CI (where secrets arrive as
+    environment variables) is unaffected. Written by hand rather than pulling
+    in python-dotenv: the file format we need is three lines of parsing.
+    """
+    env_path = Path(path)
+    if not env_path.is_file():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key and value and key not in os.environ:
+            os.environ[key] = value
 
 
 def _require_env(name: str) -> str:
@@ -126,9 +161,8 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         codacti=str(_require_key(activity_raw, "codacti")),
         name=str(_require_key(activity_raw, "name")),
     )
-    bookings = [_parse_booking(b) for b in bookings_raw]
-    if not bookings:
-        raise ConfigError("Config key 'bookings' must list at least one booking")
+    # An empty queue is allowed: a week you are not booking anything.
+    bookings = [_parse_booking(b) for b in bookings_raw or []]
 
     credentials = Credentials(
         username=_require_env("UPV_USERNAME"),
@@ -148,6 +182,12 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         else None
     )
 
+    limits_raw = raw.get("limits") or {}
+    limits = LimitsConfig(
+        max_sessions=int(limits_raw.get("max_sessions", LimitsConfig.max_sessions)),
+        max_per_activity=int(limits_raw.get("max_per_activity", LimitsConfig.max_per_activity)),
+    )
+
     return AppConfig(
         timezone=timezone,
         upv=upv,
@@ -156,4 +196,53 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         bookings=bookings,
         credentials=credentials,
         email=email,
+        limits=limits,
     )
+
+
+def render_bookings(bookings: list[BookingTarget]) -> str:
+    """Render booking targets as the YAML block `load_config` reads back."""
+    if not bookings:
+        return "bookings: []\n"
+    lines = ["bookings:"]
+    for target in bookings:
+        preferred, *alternatives = target.options
+        lines.append(f"  - group_code: {preferred.group_code}")
+        if alternatives:
+            codes = ", ".join(slot.group_code for slot in alternatives)
+            lines.append(f"    alternatives: [{codes}]")
+    return "\n".join(lines) + "\n"
+
+
+def save_bookings(path: str | Path, bookings: list[BookingTarget]) -> None:
+    """Replace the `bookings:` block of a config file, leaving the rest as it is.
+
+    Everything else in the file — comments, key order, formatting — is kept
+    byte for byte, which a YAML round-trip would not do. An empty list is
+    valid: it means nothing gets booked this Saturday.
+    """
+    config_path = Path(path)
+    if not config_path.is_file():
+        raise ConfigError(f"Config file not found: {config_path}")
+
+    original = config_path.read_text(encoding="utf-8")
+    lines = original.splitlines(keepends=True)
+
+    start = next((i for i, line in enumerate(lines) if line.startswith("bookings:")), None)
+    if start is None:
+        updated = original if original.endswith("\n") else original + "\n"
+        updated += "\n" + render_bookings(bookings)
+    else:
+        end = len(lines)
+        for i in range(start + 1, len(lines)):
+            stripped = lines[i]
+            # A new top-level key ends the block; indented lines, comments and
+            # blank lines belong to it.
+            if stripped.strip() and not stripped[0].isspace() and not stripped.startswith("#"):
+                end = i
+                break
+        updated = "".join(lines[:start]) + render_bookings(bookings) + "".join(lines[end:])
+
+    temp_path = config_path.with_suffix(config_path.suffix + ".tmp")
+    temp_path.write_text(updated, encoding="utf-8")
+    temp_path.replace(config_path)

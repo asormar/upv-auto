@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from upv_auto.config import ConfigError, load_config, parse_booking_spec
-from upv_auto.domain.models import Credentials
+from upv_auto.config import (
+    ConfigError,
+    load_config,
+    load_env_file,
+    parse_booking_spec,
+    save_bookings,
+)
+from upv_auto.domain.models import BookingTarget, Credentials, Slot
 
 CONFIG_YAML = """
 timezone: Europe/Madrid
@@ -130,3 +138,115 @@ def test_parse_booking_spec_supports_alternatives_and_validates_codes():
     assert [s.group_code for s in target.options] == ["MUS022", "MUS037"]
     with pytest.raises(ConfigError, match="bad"):
         parse_booking_spec("MUS022,bad")
+
+
+def _write_config(tmp_path, bookings_block: str) -> Path:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "timezone: Europe/Madrid\n"
+        "\n"
+        "upv:\n"
+        "  entry_url: https://example.test/entry\n"
+        "  session_check_url: https://example.test/check\n"
+        "\n"
+        "window:\n"
+        "  weekday: saturday\n"
+        "  opens_at: '10:01:00'\n"
+        "  closes_at: '10:04:00'\n"
+        "  retry_interval_seconds: 1.5\n"
+        "\n"
+        "activity:\n"
+        "  name: MUSCULACION\n"
+        "  campus: V\n"
+        "  tipoact: '6894'\n"
+        "  codacti: '21948'\n"
+        "\n"
+        "# Keep this comment\n" + bookings_block,
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def test_save_bookings_rewrites_only_the_bookings_block(tmp_path, monkeypatch):
+    monkeypatch.setenv("UPV_USERNAME", "student1")
+    monkeypatch.setenv("UPV_PASSWORD", "hunter2")
+    config_path = _write_config(tmp_path, "bookings:\n  - group_code: MUS021 # midday\n")
+
+    save_bookings(
+        config_path,
+        [
+            BookingTarget(options=(Slot("MUS022"), Slot("MUS037"))),
+            BookingTarget(options=(Slot("MUS074"),)),
+        ],
+    )
+
+    text = config_path.read_text(encoding="utf-8")
+    assert "# Keep this comment" in text
+    assert "timezone: Europe/Madrid" in text
+    assert "MUS021" not in text
+    reloaded = load_config(config_path)
+    assert [[s.group_code for s in t.options] for t in reloaded.bookings] == [
+        ["MUS022", "MUS037"],
+        ["MUS074"],
+    ]
+
+
+def test_save_bookings_keeps_keys_that_follow_the_block(tmp_path, monkeypatch):
+    monkeypatch.setenv("UPV_USERNAME", "student1")
+    monkeypatch.setenv("UPV_PASSWORD", "hunter2")
+    config_path = _write_config(
+        tmp_path,
+        "bookings:\n  - group_code: MUS021\n\nlimits:\n  max_sessions: 10\n  max_per_activity: 6\n",
+    )
+
+    save_bookings(config_path, [BookingTarget(options=(Slot("MUS022"),))])
+
+    reloaded = load_config(config_path)
+    assert reloaded.limits.max_per_activity == 6
+    assert [s.group_code for t in reloaded.bookings for s in t.options] == ["MUS022"]
+
+
+def test_an_empty_queue_round_trips(tmp_path, monkeypatch):
+    """Clearing the queue is a normal state: a week you are not booking."""
+    monkeypatch.setenv("UPV_USERNAME", "student1")
+    monkeypatch.setenv("UPV_PASSWORD", "hunter2")
+    config_path = _write_config(tmp_path, "bookings:\n  - group_code: MUS021\n")
+
+    save_bookings(config_path, [])
+
+    assert load_config(config_path).bookings == []
+
+
+def test_limits_default_to_the_upv_rules(tmp_path, monkeypatch):
+    monkeypatch.setenv("UPV_USERNAME", "student1")
+    monkeypatch.setenv("UPV_PASSWORD", "hunter2")
+    config_path = _write_config(tmp_path, "bookings:\n  - group_code: MUS021\n")
+
+    config = load_config(config_path)
+
+    assert (config.limits.max_sessions, config.limits.max_per_activity) == (10, 6)
+
+
+def test_load_env_file_fills_missing_variables_only(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "# a comment\n"
+        "UPV_USERNAME=from-file\n"
+        "UPV_PASSWORD = 'quoted secret'\n"
+        "\n"
+        "NOT_A_PAIR\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("UPV_USERNAME", "from-shell")
+    monkeypatch.delenv("UPV_PASSWORD", raising=False)
+
+    load_env_file(env_path)
+
+    import os
+
+    assert os.environ["UPV_USERNAME"] == "from-shell"
+    assert os.environ["UPV_PASSWORD"] == "quoted secret"
+
+
+def test_load_env_file_without_a_file_is_a_no_op(tmp_path):
+    load_env_file(tmp_path / "missing.env")
