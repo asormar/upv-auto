@@ -67,12 +67,19 @@ class GroupState(Enum):
 
 @dataclass(frozen=True)
 class GroupAvailability:
-    """One parsed group cell from the UPV activity table."""
+    """One parsed group cell from the UPV activity table.
+
+    `day` and `time` come from the cell's position in the weekly table (its
+    column header and its row label). They are absent when the page does not
+    lay the group out in that grid.
+    """
 
     code: str
     state: GroupState
     free_places: int | None = None
     booking_path: str | None = None
+    day: str | None = None
+    time: str | None = None
 
 
 @dataclass(frozen=True)

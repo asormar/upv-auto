@@ -88,3 +88,34 @@ def test_grupos_inscritos_summary_row_is_not_mistaken_for_a_group_cell():
     groups = parse_groups(html)
 
     assert groups == {}
+
+
+def test_weekly_grid_position_gives_each_group_a_day_and_time():
+    html = (
+        "<table><thead><tr>"
+        '<th scope="col">Horario</th><th scope="col">Lunes</th><th scope="col">Martes</th>'
+        "</tr></thead><tbody><tr>"
+        "<td>12:30-13:30 Sala Musculación</td>"
+        "<td>MUS006<br>Solo Socios<br>Completo</td>"
+        "<td>MUS021<br>Solo Socios<br>2 libres</td>"
+        "</tr></tbody></table>"
+    )
+
+    groups = parse_groups(html)
+
+    assert (groups["MUS006"].day, groups["MUS006"].time) == ("Lunes", "12:30-13:30")
+    assert (groups["MUS021"].day, groups["MUS021"].time) == ("Martes", "12:30-13:30")
+
+
+def test_headers_of_other_tables_do_not_become_weekdays():
+    html = (
+        "<table><thead><tr>"
+        '<th scope="col">Grupo</th><th scope="col">Estado</th>'
+        "</tr></thead><tbody><tr>"
+        "<td>MUS006<br>Completo</td><td>Confirmado</td>"
+        "</tr></tbody></table>"
+    )
+
+    groups = parse_groups(html)
+
+    assert groups["MUS006"].day is None
