@@ -5,7 +5,8 @@ slot. Booking opens every Saturday at 10:00 Europe/Madrid, but UPV sometimes
 keeps serving the previous week's table for a while and the page has no week
 indicator — so this starts at 10:01:00 and retries until 10:04:00.
 
-Runs for free on GitHub Actions (private repo). It is triggered remotely by
+Runs for free on GitHub Actions (standard runners are unmetered on public
+repositories). It is triggered remotely by
 [cron-job.org](https://cron-job.org) at 09:45 Europe/Madrid, which dispatches
 the workflow with a few minutes of margin before the window opens.
 
@@ -19,8 +20,10 @@ Hybrid approach, hexagonal architecture:
   (`adapters/httpx_session.py`) and to perform the actual booking requests
   (`adapters/httpx_booking.py`) — much faster than driving a browser during
   the retry window.
-- `app/book_slot.py` and `app/check_login.py` hold the use cases; `ports.py`
-  defines the interfaces adapters implement; `domain/` has no I/O.
+- `app/` holds the use cases: `book_slot.py`, `check_login.py`,
+  `list_groups.py`, and `fetch_schedule.py` — log in, download and parse the
+  table — which `list-groups` and the web UI share. `ports.py` defines the
+  interfaces adapters implement; `domain/` has no I/O.
 
 **Booking works by scraping and replaying links, not calling a JSON API**,
 and downloads the activity table **at most once per round**, no matter how
@@ -32,7 +35,8 @@ many bookings are pending. `HttpxActivityTableClient`
   (`adapters/upv_activities_parser.py`, stdlib `html.parser` only) into a
   `{group_code: GroupAvailability}` map — one entry per group cell, with its
   state (`BOOKABLE` / `FULL` / `ENROLLED` / `UNAVAILABLE`), free-place count,
-  and (for bookable groups) the exact booking link scraped from that cell.
+  the day and time read from the cell's position in the weekly grid, and (for
+  bookable groups) the exact booking link scraped from that cell.
 - `follow_booking()` GETs a bookable group's scraped link
   (`sic_depact.HSemActMatri?...`) — the booking id in that link
   (`p_codgrupo_mat`) is opaque and changes between groups, so it is always
@@ -78,11 +82,22 @@ activity:
   tipoact: "6894"
   codacti: "21948"
 
+# Optional; these are the defaults. UPV's Área de Deportes caps how many
+# places one person may hold at the same time.
+limits:
+  max_sessions: 10
+  max_per_activity: 6
+
 bookings:
   - group_code: MUS021            # Tuesday 12:30-13:30
   - group_code: MUS022            # Tuesday 13:30-14:30
     alternatives: [MUS037]        # Wednesday 13:30-14:30 if MUS022 is full
 ```
+
+An empty `bookings:` list is valid — a week you are not booking anything.
+The run then exits 0 without logging in. Note that the web UI rewrites this
+block when you change the queue, so hand-written comments on each booking do
+not survive.
 
 All bookings are attempted round-robin during the window, so one never waits
 for another. You get a single summary email (`Booked 2/2: ...`), and the run
@@ -107,9 +122,10 @@ Commands:
 
 ```bash
 python -m upv_auto check-login          # log in, verify the session, exit
-python -m upv_auto list-groups          # log in, print each group's state (pick group_code values)
+python -m upv_auto list-groups          # log in, print each group's state, day and time
 python -m upv_auto book                 # wait for the window, attempt to book
 python -m upv_auto book --now           # skip waiting (local testing only)
+python -m upv_auto serve                # run the local web UI (see below)
 ```
 
 ## Web UI
@@ -144,7 +160,11 @@ refused by the API, not just hidden in the UI.
 
 ## GitHub Actions setup
 
-1. Create a **private** GitHub repository and push this code.
+1. Push this code to a GitHub repository. Public is fine, and is what this
+   one uses: credentials live in Actions secrets, never in the repository, and
+   standard runners are unmetered for public repos. What a public repo does
+   expose is `config.yaml` — which activity and which hours you book. Use a
+   private repository if you would rather not publish that.
 2. Add repository secrets (Settings → Secrets and variables → Actions):
    - `UPV_USERNAME`, `UPV_PASSWORD` — required.
    - `SMTP_USERNAME`, `SMTP_APP_PASSWORD` — optional email notifications via
