@@ -66,6 +66,11 @@ class BookSlotUseCase:
         self._config = config
 
     def execute(self, *, skip_wait: bool = False) -> int:
+        if not self._config.bookings:
+            logger.info("Nothing queued: no booking to make")
+            self._notifier.notify("Nothing queued for this run.")
+            return 0
+
         session = self._login_and_verify()
         if session is None:
             return 1

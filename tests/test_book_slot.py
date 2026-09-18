@@ -302,3 +302,22 @@ def test_follow_booking_error_then_next_round_confirms_via_attempted_codes():
     assert result == 0
     assert table_client.calls == [("fetch",), ("follow", "MUS074"), ("fetch",)]
     assert notifier.messages[-1].startswith("Booked 1/1: MUS074")
+
+
+def test_an_empty_queue_never_logs_in():
+    authenticator = FakeAuthenticator()
+    notifier = FakeNotifier()
+    use_case = BookSlotUseCase(
+        authenticator=authenticator,
+        verifier=FakeVerifier(),
+        table_client=FakeActivityTableClient([]),
+        notifier=notifier,
+        clock=FakeClock(datetime(2026, 9, 19, 10, 0, tzinfo=TZ)),
+        config=make_config(bookings=[]),
+    )
+
+    exit_code = use_case.execute(skip_wait=True)
+
+    assert exit_code == 0
+    assert authenticator.calls == 0
+    assert "Nothing queued" in notifier.messages[0]
