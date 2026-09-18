@@ -1,0 +1,28 @@
+timezone: Europe/Madrid
+
+upv:
+  entry_url: https://intranet.upv.es/pls/soalu/est_intranet.Ni_portal_n?P_IDIOMA=c
+  session_check_url: https://intranet.upv.es/pls/soalu/est_intranet.Ni_portal_n?P_IDIOMA=c
+
+window:
+  weekday: saturday
+  # One minute after the official 10:00 opening: UPV sometimes keeps serving the
+  # previous week's table for a while, and the page has no week indicator.
+  opens_at: "10:01:00"
+  closes_at: "10:04:00"
+  retry_interval_seconds: 1.5
+
+# The UPV sports activity whose weekly group table gets scraped and booked
+# against. Run `python -m upv_auto list-groups` to see the current state of
+# every group for this activity (useful for picking group codes below).
+activity:
+  name: MUSCULACION
+  campus: V
+  tipoact: "6894"
+  codacti: "21948"
+
+# Every entry is a separate place the bot tries to secure. Within an entry,
+# `group_code` is preferred and `alternatives` are tried in order if it is full.
+bookings:
+  - group_code: MUS021 # Tuesday 12:30-13:30
+  - group_code: MUS022 # Tuesday 13:30-14:30
