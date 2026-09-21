@@ -4,6 +4,8 @@ Usage:
     python -m upv_auto check-login [--config PATH]
     python -m upv_auto list-groups [--config PATH]
     python -m upv_auto book [--config PATH] [--now]
+    python -m upv_auto book-all [--config PATH] [--now]
+    python -m upv_auto seal-keygen [--key-id KEY_ID]
     python -m upv_auto serve [--config PATH] [--host HOST] [--port PORT]
 
 --now skips waiting for the booking window to open; useful for local testing.
@@ -13,8 +15,11 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import logging
+import os
 import sys
+import uuid
 from pathlib import Path
 
 from upv_auto.adapters.httpx_booking import HttpxActivityTableClient
@@ -33,6 +38,7 @@ from upv_auto.config import (
     load_env_file,
     parse_booking_spec,
 )
+from upv_auto.domain.models import Credentials, UserRecord
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +94,26 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         ),
     )
 
+    book_all_parser = subparsers.add_parser(
+        "book-all",
+        help="Multi-user Saturday batch: every Supabase user with a non-empty queue, turn-taking.",
+    )
+    book_all_parser.add_argument("--config", default="config.yaml")
+    book_all_parser.add_argument(
+        "--now",
+        action="store_true",
+        help="Skip waiting for the window to open (for testing).",
+    )
+
+    seal_keygen_parser = subparsers.add_parser(
+        "seal-keygen", help="Generate a new sealed-box key pair for credential custody."
+    )
+    seal_keygen_parser.add_argument(
+        "--key-id",
+        default="v1",
+        help="Identifier for the new key pair (used as SEAL_PRIVATE_KEYS' JSON key and VITE_SEAL_KEY_ID).",
+    )
+
     serve_parser = subparsers.add_parser(
         "serve", help="Run the local web UI (needs the 'web' extra installed)."
     )
@@ -119,6 +145,121 @@ def _demo_store():
     return ScheduleStore(lambda config: groups)
 
 
+def _require_env_var(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise ConfigError(f"Missing required environment variable: {name}")
+    return value
+
+
+def _settings_payload(config: AppConfig) -> dict:
+    """The `app_settings.settings` shape the web frontend's `getConfig()` reads
+    (see `web/src/api/supabase.ts`'s `AppSettingsRow`)."""
+    return {
+        "activity": {
+            "campus": config.activity.campus,
+            "tipoact": config.activity.tipoact,
+            "codacti": config.activity.codacti,
+            "name": config.activity.name,
+        },
+        "window": {
+            "weekday": config.window.weekday,
+            "opens_at": config.window.opens_at,
+            "closes_at": config.window.closes_at,
+            "retry_interval_seconds": config.window.retry_interval_seconds,
+        },
+        "timezone": config.timezone,
+        "limits": {
+            "max_sessions": config.limits.max_sessions,
+            "max_per_activity": config.limits.max_per_activity,
+        },
+    }
+
+
+def _seal_keygen(args: argparse.Namespace) -> int:
+    """Generate a fresh sealed-box key pair (credential-custody spec: "Key Rotation
+    Invalidates Stored Credentials"). Prints the values to wire up by hand: the
+    public half goes to the frontend, the private half to the runner's secret."""
+    from upv_auto.adapters.sealed_box import generate_keypair
+
+    public_key, private_key = generate_keypair()
+    key_id = args.key_id
+    print(f"key_id: {key_id}")
+    print(f"VITE_SEAL_PUBLIC_KEY={public_key}")
+    print(f"VITE_SEAL_KEY_ID={key_id}")
+    print(f'SEAL_PRIVATE_KEYS entry to merge into the existing JSON secret: "{key_id}": "{private_key}"')
+    return 0
+
+
+def _book_all(args: argparse.Namespace) -> int:
+    """Multi-user Saturday batch: every Supabase user with a non-empty queue,
+    processed turn-taking (weekly-batch-booking spec). Imported lazily so the
+    single-user CLI still works without the 'multiuser' extra installed."""
+    try:
+        from upv_auto.adapters.log_redaction import RedactingFilter, configure_log_hygiene, mask_for_actions
+        from upv_auto.adapters.sealed_box import SealedBoxOpener
+        from upv_auto.adapters.supabase_rest import SupabaseRestUserDirectory
+        from upv_auto.app.run_batch import run_batch
+    except ImportError:
+        logger.error("book-all needs the extra dependencies: pip install -e \".[multiuser]\"")
+        return 1
+
+    try:
+        config = load_config(args.config, require_upv_credentials=False)
+        supabase_url = _require_env_var("SUPABASE_URL")
+        service_role_key = _require_env_var("SUPABASE_SERVICE_ROLE_KEY")
+        private_keys = json.loads(_require_env_var("SEAL_PRIVATE_KEYS"))
+    except ConfigError as exc:
+        logger.error(str(exc))
+        return 1
+    except json.JSONDecodeError as exc:
+        logger.error("SEAL_PRIVATE_KEYS is not valid JSON: %s", exc)
+        return 1
+
+    smtp_username = os.environ.get("SMTP_USERNAME")
+    smtp_app_password = os.environ.get("SMTP_APP_PASSWORD")
+    run_id = os.environ.get("GITHUB_RUN_ID") or str(uuid.uuid4())
+
+    redacting_filter = RedactingFilter()
+    configure_log_hygiene(redacting_filter)
+
+    def on_credentials_opened(credentials: Credentials) -> None:
+        redacting_filter.register(credentials.username, credentials.password)
+        mask_for_actions(credentials.username, credentials.password)
+
+    def authenticator_factory(user_config: AppConfig):
+        return PlaywrightCasAuthenticator(entry_url=user_config.upv.entry_url)
+
+    def verifier_factory(user_config: AppConfig):
+        return HttpxSessionVerifier(session_check_url=user_config.upv.session_check_url)
+
+    def table_client_factory(user_config: AppConfig):
+        return HttpxActivityTableClient(activity=user_config.activity)
+
+    def notifier_factory(user: UserRecord):
+        if smtp_username and smtp_app_password:
+            return EmailNotifier(smtp_username, smtp_app_password, user.email)
+        return ConsoleNotifier()
+
+    clock = SystemClock(timezone=config.timezone)
+
+    with SupabaseRestUserDirectory(supabase_url, service_role_key) as directory:
+        directory.upsert_settings(_settings_payload(config))
+        return run_batch(
+            config,
+            directory,
+            SealedBoxOpener(private_keys),
+            authenticator_factory,
+            verifier_factory,
+            table_client_factory,
+            notifier_factory,
+            clock,
+            run_id,
+            skip_wait=args.now,
+            on_credentials_opened=on_credentials_opened,
+        )
+
+
 def _serve(args: argparse.Namespace) -> int:
     """Run the web adapter. Imported lazily: the CLI must work without FastAPI."""
     try:
@@ -143,9 +284,16 @@ def main(argv: list[str] | None = None) -> int:
     load_env_file()
 
     # The server reports config problems over HTTP, so it starts before the
-    # config (and its required secrets) are loaded.
+    # config (and its required secrets) are loaded. `seal-keygen` and
+    # `book-all` load config differently from the single-user commands below
+    # (no UPV_USERNAME/UPV_PASSWORD; book-all needs Supabase/seal secrets
+    # instead), so they are handled in their own functions.
     if args.command == "serve":
         return _serve(args)
+    if args.command == "seal-keygen":
+        return _seal_keygen(args)
+    if args.command == "book-all":
+        return _book_all(args)
 
     try:
         config = load_config(args.config)

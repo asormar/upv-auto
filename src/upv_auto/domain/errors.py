@@ -20,3 +20,11 @@ class AuthenticationBlocked(Exception):
 
     The authenticator must never attempt to bypass this; it should stop and report it.
     """
+
+
+class CredentialsUnavailable(Exception):
+    """A sealed credential could not be opened.
+
+    Raised for an unknown/rotated `key_id`, or ciphertext that fails to
+    decrypt or decode. Never carries the sealed value or any plaintext.
+    """
