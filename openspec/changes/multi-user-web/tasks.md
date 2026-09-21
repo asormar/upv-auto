@@ -95,11 +95,11 @@ Satisfies: schedule-refresh (throttle, rate limit, loading state), credential-cu
 
 Satisfies: platform-operations (Pages hosting).
 
-- [ ] 5.1 Modify `web/vite.config.ts`: `base: process.env.VITE_BASE_PATH ?? "/"`
-- [ ] 5.2 Create `.github/workflows/pages.yml`: build `web/`, deploy to Pages
-- [ ] 5.3 Create `web/src/scheduleView.ts`: port `build_days` to TypeScript
-- [ ] 5.4 Verify `VITE_BACKEND=local` still serves FastAPI for `serve --demo`
-- [ ] 5.5 Test: `npm run build --prefix web` with `VITE_BASE_PATH` set
+- [x] 5.1 Modify `web/vite.config.ts`: `base: process.env.VITE_BASE_PATH ?? "/"`
+- [x] 5.2 Create `.github/workflows/pages.yml`: build `web/`, deploy to Pages
+- [x] 5.3 Create `web/src/scheduleView.ts`: port `build_days` to TypeScript
+- [x] 5.4 Verify `VITE_BACKEND=local` still serves FastAPI for `serve --demo`
+- [x] 5.5 Test: `npm run build --prefix web` with `VITE_BASE_PATH` set
 
 ## Phase 6: Migration + Docs (PR 6)
 

@@ -4,6 +4,7 @@
 // `supabase/migrations/0001_multi_user.sql`.
 
 import { createClient, type SupabaseClient, type Session } from "@supabase/supabase-js";
+import { buildDays, countEnrolledNow } from "../scheduleView";
 import type { Backend, Booking, Config, RawGroups, RefreshTrigger, Schedule } from "./types";
 
 // `createClient` validates its URL/key eagerly (throws if either is empty),
@@ -277,18 +278,10 @@ export async function getSchedule(_refresh = false): Promise<Schedule> {
     limits: {
       ...config.limits,
       queued: config.bookings.length,
-      enrolled_this_week: countEnrolledThisWeek(groups),
+      enrolled_this_week: countEnrolledNow(groups),
     },
-    // Phase 5 (task 5.3) ports `adapters/web/schedule_view.py`'s `build_days`
-    // to `web/src/scheduleView.ts`; until then there is no cached-groups ->
-    // day-view conversion here, so the agenda stays empty for the Supabase
-    // backend (the queue panel and credential flow above it work today).
-    days: [],
+    days: buildDays(groups, config.bookings),
   };
-}
-
-function countEnrolledThisWeek(groups: RawGroups): number {
-  return Object.values(groups).filter((group) => group.state === "ENROLLED").length;
 }
 
 // Structural check only: keeps this module's exports in sync with `Backend`.
