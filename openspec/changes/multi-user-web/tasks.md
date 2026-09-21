@@ -11,9 +11,9 @@
 | Delivery strategy | ask-on-risk |
 | Chain strategy | pending (user decision) |
 
-Decision needed before apply: Yes
+Decision needed before apply: Yes (resolved)
 Chained PRs recommended: Yes
-Chain strategy: pending
+Chain strategy: stacked-to-main (resolved — PR 2 of 6 in progress)
 400-line budget risk: High
 
 Ask the user: **Stacked PRs to main** (each slice mergeable alone, matches the design's numbered slices) or **Feature Branch Chain** (a `multi-user-web` tracker accumulates all 6 before merging)? OWNER tasks (Phase 0) are prerequisites, not PR content, and run outside the line budget.
@@ -51,12 +51,12 @@ Satisfies: user-accounts (RLS isolation, deletion cascade), booking-queue (limit
 
 Satisfies: user-accounts (sign-up/in), credential-custody (browser sealing).
 
-- [ ] 2.1 Add `@supabase/supabase-js`, `libsodium-wrappers` to `web/package.json`
-- [ ] 2.2 Create `web/src/api/local.ts`, `web/src/api/supabase.ts`; keep `web/src/api.ts` as the `VITE_BACKEND` facade
-- [ ] 2.3 Create `web/src/seal.ts` (lazy import): `crypto_box_seal` against `VITE_SEAL_PUBLIC_KEY`/`VITE_SEAL_KEY_ID`
-- [ ] 2.4 Create `web/src/components/AuthGate.tsx`, `SignIn.tsx`, `CredentialsForm.tsx`
-- [ ] 2.5 Modify `web/src/App.tsx`, `web/src/main.tsx`: wrap the app in `AuthGate`
-- [ ] 2.6 Test: `npm run build --prefix web`
+- [x] 2.1 Add `@supabase/supabase-js`, `libsodium-wrappers` to `web/package.json`
+- [x] 2.2 Create `web/src/api/local.ts`, `web/src/api/supabase.ts`; keep `web/src/api.ts` as the `VITE_BACKEND` facade
+- [x] 2.3 Create `web/src/seal.ts` (lazy import): `crypto_box_seal` against `VITE_SEAL_PUBLIC_KEY`/`VITE_SEAL_KEY_ID`
+- [x] 2.4 Create `web/src/components/AuthGate.tsx`, `SignIn.tsx`, `CredentialsForm.tsx`
+- [x] 2.5 Modify `web/src/App.tsx`, `web/src/main.tsx`: wrap the app in `AuthGate`
+- [x] 2.6 Test: `npm run build --prefix web`
 
 ## Phase 3: Python Supabase Adapter + `book-all` Loop (PR 3)
 

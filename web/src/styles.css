@@ -555,6 +555,117 @@ button,
   }
 }
 
+/* ---------- auth gate ---------- */
+.authgate {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 24px;
+}
+.authgate-card {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out);
+}
+@starting-style {
+  .authgate-card {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.authgate-brand {
+  justify-content: center;
+}
+.authgate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.authgate-title {
+  font-size: 22px;
+  font-weight: 600;
+  text-align: center;
+}
+.authgate-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  text-align: center;
+}
+.authgate-hint-seal {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--body);
+  text-align: left;
+}
+.authgate-hint-seal svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--ok);
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--body);
+}
+.field input {
+  font: inherit;
+  font-weight: 400;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1.5px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.field input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.authgate-error,
+.authgate-info {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.authgate-error {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.authgate-info {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.authgate-switch {
+  padding: 4px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  transition: color 160ms ease;
+}
+.authgate-switch:hover {
+  color: var(--accent-ink);
+}
+.authgate-theme {
+  flex: none;
+}
+
 /* ---------- mobile ---------- */
 .mobilebar {
   display: none;
@@ -652,7 +763,8 @@ button,
   .press:active,
   .toggle .knob,
   .toggle .ico,
-  .bubble {
+  .bubble,
+  .authgate-card {
     transition: opacity 150ms linear;
     transform: none;
   }
