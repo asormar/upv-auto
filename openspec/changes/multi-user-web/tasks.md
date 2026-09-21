@@ -41,10 +41,10 @@ Ask the user: **Stacked PRs to main** (each slice mergeable alone, matches the d
 
 Satisfies: user-accounts (RLS isolation, deletion cascade), booking-queue (limits, RLS), platform-operations (keepalive).
 
-- [ ] 1.1 Create `supabase/migrations/0001_multi_user.sql`: tables, RLS policies, `validate_queue` trigger, `batch_roster()`, `claim_refresh()`, `keepalive` RPC, Realtime publication
-- [ ] 1.2 Create `supabase/functions/refresh/index.ts` skeleton: `getUser()`, CORS limited to Pages origin
-- [ ] 1.3 Create `supabase/functions/delete-account/index.ts`: `auth.admin.deleteUser` via service role
-- [ ] 1.4 Create `.github/workflows/keepalive.yml`: `workflow_dispatch` + `schedule` backup, calls `rpc/keepalive`
+- [x] 1.1 Create `supabase/migrations/0001_multi_user.sql`: tables, RLS policies, `validate_queue` trigger, `batch_roster()`, `claim_refresh()`, `keepalive` RPC, Realtime publication
+- [x] 1.2 Create `supabase/functions/refresh/index.ts` skeleton: `getUser()`, CORS limited to Pages origin
+- [x] 1.3 Create `supabase/functions/delete-account/index.ts`: `auth.admin.deleteUser` via service role
+- [x] 1.4 Create `.github/workflows/keepalive.yml`: `workflow_dispatch` + `schedule` backup, calls `rpc/keepalive`
 - [ ] OWNER 1.5 Apply the migration and deploy both Edge Functions to the live Supabase project
 
 ## Phase 2: Browser Auth + Sealed-Box + api.ts (PR 2)
