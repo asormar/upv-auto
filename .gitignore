@@ -12,3 +12,4 @@ storage_state*.json
 .agents/
 .claude/
 skills-lock.json
+.codegraph/
