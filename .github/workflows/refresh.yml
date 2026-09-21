@@ -1,0 +1,69 @@
+name: Refresh schedule
+
+# One user's schedule refresh (schedule-refresh spec), dispatched only by the
+# `refresh` Edge Function with a single opaque `request_id` input — never a
+# user id or email (design.md's "Refresh dispatch" decision: "Public run
+# inputs show only a random UUID"). Deliberately no `concurrency:` group:
+# GitHub keeps only one pending run per group and cancels the rest, but every
+# user's refresh must be able to run independently of everyone else's.
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: "Opaque refresh_requests.id (UUID), set only by the refresh Edge Function"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package
+        run: pip install ".[multiuser]"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install Playwright browser (cache miss)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: python -m playwright install --with-deps chromium
+
+      - name: Install Playwright OS deps (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: python -m playwright install-deps chromium
+
+      - name: Refresh
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SEAL_PRIVATE_KEYS: ${{ secrets.SEAL_PRIVATE_KEYS }}
+          # The input goes through an env var, never interpolated into the
+          # script (avoids injection). Validated as a UUID here AND again by
+          # the CLI itself (defense in depth; threat matrix: workflow-input
+          # injection) before it is used anywhere.
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          if ! [[ "$REQUEST_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            echo "::error::Invalid request_id: not a UUID"
+            exit 1
+          fi
+          python -m upv_auto refresh --request-id "$REQUEST_ID"
+
+      # No `Upload debug artifacts` step: same as book-all, CAS screenshots
+      # would show one user's username (design.md's log hygiene #5).

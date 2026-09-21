@@ -13,7 +13,7 @@
 
 Decision needed before apply: Yes (resolved)
 Chained PRs recommended: Yes
-Chain strategy: stacked-to-main (resolved — PR 3 of 6 complete)
+Chain strategy: stacked-to-main (resolved — PR 4 of 6 complete)
 400-line budget risk: High
 
 Ask the user: **Stacked PRs to main** (each slice mergeable alone, matches the design's numbered slices) or **Feature Branch Chain** (a `multi-user-web` tracker accumulates all 6 before merging)? OWNER tasks (Phase 0) are prerequisites, not PR content, and run outside the line budget.
@@ -82,14 +82,14 @@ Satisfies: weekly-batch-booking (turn-taking, isolation, results, email), creden
 
 Satisfies: schedule-refresh (throttle, rate limit, loading state), credential-custody (no plaintext logs).
 
-- [ ] 4.1 RED `tests/test_refresh_user.py`: `refresh --request-id` rejects a non-UUID value (threat matrix: workflow-input injection)
-- [ ] 4.2 Finish `supabase/functions/refresh/index.ts`: `getUser()` -> `claim_refresh` -> `workflow_dispatch(request_id)` only
-- [ ] 4.3 Create `.github/workflows/refresh.yml`: UUID input validated via `env`, `timeout-minutes: 10`, no `concurrency:` group, no artifacts
-- [ ] 4.4 Create `src/upv_auto/app/refresh_user.py`: unseal -> `fetch_schedule` -> save; status `done`/`failed`
-- [ ] 4.5 Modify `src/upv_auto/__main__.py`: add `refresh --request-id` subcommand
-- [ ] 4.6 Create `web/src/api/useRefreshStatus.ts`: Realtime hook on `refresh_requests`; wire sign-in throttle and manual-button triggers
-- [ ] 4.7 Modify `web/src/App.tsx`: drive `refreshing` from `useRefreshStatus`
-- [ ] 4.8 Test: `.venv\Scripts\python.exe -m pytest -q` and `npm run build --prefix web`
+- [x] 4.1 RED `tests/test_refresh_user.py`: `refresh --request-id` rejects a non-UUID value (threat matrix: workflow-input injection)
+- [x] 4.2 Finish `supabase/functions/refresh/index.ts`: `getUser()` -> `claim_refresh` -> `workflow_dispatch(request_id)` only
+- [x] 4.3 Create `.github/workflows/refresh.yml`: UUID input validated via `env`, `timeout-minutes: 10`, no `concurrency:` group, no artifacts
+- [x] 4.4 Create `src/upv_auto/app/refresh_user.py`: unseal -> `fetch_schedule` -> save; status `done`/`failed`
+- [x] 4.5 Modify `src/upv_auto/__main__.py`: add `refresh --request-id` subcommand
+- [x] 4.6 Create `web/src/api/useRefreshStatus.ts`: Realtime hook on `refresh_requests`; wire sign-in throttle and manual-button triggers
+- [x] 4.7 Modify `web/src/App.tsx`: drive `refreshing` from `useRefreshStatus`
+- [x] 4.8 Test: `.venv\Scripts\python.exe -m pytest -q` and `npm run build --prefix web`
 
 ## Phase 5: Pages Deploy + Vite `base` (PR 5)
 

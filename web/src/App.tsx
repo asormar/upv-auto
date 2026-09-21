@@ -1,6 +1,7 @@
 import NumberFlow from "@number-flow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  BACKEND,
   getConfig,
   getSchedule,
   putBookings,
@@ -9,6 +10,7 @@ import {
   type Schedule,
   type Slot,
 } from "./api";
+import { useRefreshStatus } from "./api/useRefreshStatus";
 import { DayRail } from "./components/DayRail";
 import { QueuePanel } from "./components/QueuePanel";
 import { QueuePanelSkeleton } from "./components/QueuePanelSkeleton";
@@ -23,7 +25,10 @@ export default function App() {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [dayIndex, setDayIndex] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  // Local backend only: `useRefreshStatus` no-ops under `VITE_BACKEND=local`
+  // (no accounts, no Realtime), so the FastAPI dev server keeps its own
+  // synchronous `?refresh=true` round trip driving this instead.
+  const [localRefreshing, setLocalRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState(false);
   const [justRemoved, setJustRemoved] = useState(false);
@@ -40,6 +45,10 @@ export default function App() {
       return null;
     }
   }, []);
+
+  const onRefreshed = useCallback(() => void load(), [load]);
+  const refreshStatus = useRefreshStatus(onRefreshed);
+  const refreshing = BACKEND === "local" ? localRefreshing : refreshStatus.pending;
 
   useEffect(() => {
     void load();
@@ -106,9 +115,18 @@ export default function App() {
     );
 
   const refresh = async () => {
-    setRefreshing(true);
-    await load(true);
-    setRefreshing(false);
+    if (BACKEND === "local") {
+      // The FastAPI dev server has no Realtime/rate-limit story: refresh
+      // synchronously, same as before Phase 4.
+      setLocalRefreshing(true);
+      await load(true);
+      setLocalRefreshing(false);
+      return;
+    }
+    // Dispatches the Edge Function's rate-limited manual refresh; the
+    // result lands 1-2 min later via `useRefreshStatus`'s Realtime
+    // subscription, which then reloads the schedule (`onRefreshed` above).
+    await refreshStatus.triggerManualRefresh();
   };
 
   const day = schedule?.days[dayIndex];
@@ -145,9 +163,9 @@ export default function App() {
             </span>
             {refreshing ? "Actualizando…" : "Actualizar tabla"}
           </button>
-          {error ? (
+          {error || refreshStatus.message ? (
             <span className="status warn">
-              <Alert /> {error}
+              <Alert /> {error ?? refreshStatus.message}
             </span>
           ) : (
             <span className="status">
