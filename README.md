@@ -5,10 +5,20 @@ slot. Booking opens every Saturday at 10:00 Europe/Madrid, but UPV sometimes
 keeps serving the previous week's table for a while and the page has no week
 indicator — so this starts at 10:01:00 and retries until 10:04:00.
 
-Runs for free on GitHub Actions (standard runners are unmetered on public
-repositories). It is triggered remotely by
-[cron-job.org](https://cron-job.org) at 09:45 Europe/Madrid, which dispatches
-the workflow with a few minutes of margin before the window opens.
+Two ways to run it:
+
+- **Multi-user web app** (recommended): sign up on the deployed GitHub Pages
+  site, enter your UPV credentials once, pick your hours, and a shared GitHub
+  Actions run books for every signed-up user on Saturday. See
+  [Multi-user architecture](#multi-user-architecture) below.
+- **Single-user, `config.yaml`-only**: the original mode — edit `config.yaml`
+  by hand or run the local web UI, no Supabase project needed. See
+  [Local setup](#local-setup).
+
+Both run for free on GitHub Actions (standard runners are unmetered on public
+repositories) and are triggered remotely by
+[cron-job.org](https://cron-job.org) at 09:45 Europe/Madrid, a few minutes of
+margin before the window opens.
 
 ## How it works
 
@@ -60,7 +70,173 @@ retried and, if it never changes, reported as "check manually".
 Any response whose final URL lands on `cas.upv.es` means the session has
 expired; the run re-logs in at most once before giving up.
 
+## Multi-user architecture
+
+The deployed app is a static frontend on GitHub Pages talking directly to
+Supabase, with GitHub Actions as the only thing that ever logs into UPV.
+
+```
+Browser (GitHub Pages)
+  │  sign up / sign in (Supabase Auth)
+  │  seal UPV credentials with a public key, write the booking queue
+  ▼
+Supabase (Postgres + RLS + Realtime + Edge Functions)
+  │  upv_credentials · booking_queue · schedules · refresh_requests · batch_results
+  │  refresh Edge Function: claim_refresh() → workflow_dispatch(refresh.yml)
+  ▼
+GitHub Actions (the only UPV client)
+  book.yml (mode: book-all) ── cron-job.org, Saturday 09:45 Europe/Madrid
+  refresh.yml               ── dispatched only by the refresh Edge Function
+  keepalive.yml              ── cron-job.org, daily (+ a 60-day backup schedule)
+  pages.yml                  ── builds and deploys web/ on every push to main
+```
+
+- **Browser**: React app (`web/`). Users never see UPV credentials again
+  after entering them once — `web/src/seal.ts` encrypts them client-side with
+  `crypto_box_seal` before they ever reach Supabase, using the public key
+  baked into the build (`VITE_SEAL_PUBLIC_KEY`). Only the GitHub Actions
+  runner holds the matching private key.
+- **Supabase**: identity (Supabase Auth), sealed credentials, each user's
+  booking queue, a cached schedule per user, and refresh/result tracking —
+  all under Row-Level Security, so one user's Postgres row is invisible to
+  another. `supabase/migrations/0001_multi_user.sql` is the full schema;
+  `supabase/functions/` holds the two Edge Functions (`refresh`,
+  `delete-account`).
+- **GitHub Actions** stays the only thing that ever talks to UPV, exactly as
+  in single-user mode — `book-all` just loops over every user with a
+  non-empty queue instead of reading one `config.yaml`.
+
+### What users see
+
+1. Sign up on the deployed Pages URL (email + password, no confirmation
+   email step).
+2. Enter UPV username/password once — sealed in the browser, never sent or
+   stored in plain text.
+3. Pick hours from the live UPV table, same queue/alternatives UI as the
+   single-user web UI.
+4. The schedule refreshes automatically on sign-in (if the cached one is
+   stale) and on demand via the "Actualizar" button, both rate-limited
+   server-side; a loading state shows while a refresh is in flight.
+5. Every Saturday at 09:45 Europe/Madrid, `book-all` books every signed-up
+   user's queue in turn (one user's UPV session active at a time, so nobody
+   blocks anybody else) and sends each user their own summary email.
+
+## Owner setup (one-time)
+
+Everything below is done once by whoever runs the deployment — not by each
+user. Checklist order matters (secrets before the workflow that reads them).
+
+- [ ] **Supabase project**: create a free-tier project, then apply
+      `supabase/migrations/0001_multi_user.sql` (SQL editor or
+      `supabase db push`) and deploy both Edge Functions:
+      `supabase functions deploy refresh` and
+      `supabase functions deploy delete-account`.
+- [ ] **Edge Function secrets** (`supabase secrets set NAME=value`, not
+      GitHub Actions secrets — these live in the Supabase project):
+
+  | Secret | Value |
+  |--------|-------|
+  | `ALLOWED_ORIGIN` | The deployed Pages origin, e.g. `https://<owner>.github.io` (CORS allow-list) |
+  | `GITHUB_REPO` | `owner/repo` — where `refresh.yml` gets dispatched |
+  | `GITHUB_DISPATCH_TOKEN` | A fine-grained PAT scoped to this one repo, **Actions: Read and write** only |
+
+  `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` do
+  **not** need to be set by hand — Supabase injects them into every deployed
+  Edge Function automatically.
+- [ ] **`seal-keygen`**: run `python -m upv_auto seal-keygen` (needs the
+      `multiuser` extra: `pip install -e ".[multiuser]"`). It prints a fresh
+      key pair — copy each value where it says:
+  - `VITE_SEAL_PUBLIC_KEY` and `VITE_SEAL_KEY_ID` → GitHub Actions secrets
+    (read by `pages.yml`, baked into the built frontend).
+  - The printed `SEAL_PRIVATE_KEYS` entry → merge into the
+    `SEAL_PRIVATE_KEYS` GitHub Actions secret, a JSON object of
+    `{key_id: private_key}` (start with just the one entry the first time).
+- [ ] **GitHub Actions secrets** (Settings → Secrets and variables →
+      Actions → Secrets), read by `book.yml`, `refresh.yml`, `keepalive.yml`,
+      and `pages.yml`:
+
+  | Secret | Used by |
+  |--------|---------|
+  | `SUPABASE_URL` | `book.yml`, `refresh.yml`, `keepalive.yml` |
+  | `SUPABASE_SERVICE_ROLE_KEY` | `book.yml`, `refresh.yml`, `keepalive.yml` |
+  | `SEAL_PRIVATE_KEYS` | `book.yml`, `refresh.yml` |
+  | `VITE_SUPABASE_URL` | `pages.yml` |
+  | `VITE_SUPABASE_ANON_KEY` | `pages.yml` |
+  | `VITE_SEAL_PUBLIC_KEY` | `pages.yml` |
+  | `VITE_SEAL_KEY_ID` | `pages.yml` |
+
+  Plus the dispatch PAT (see [cron-job.org setup](#cron-job-org-setup)
+  below) — the same fine-grained PAT works for `book-all` and the daily
+  keepalive dispatch; it does not need to be a repository secret, only
+  cron-job.org's own stored credential.
+- [ ] **Enable GitHub Pages**: repo Settings → Pages → Source →
+      "GitHub Actions". `pages.yml` builds and deploys `web/` on every push
+      to `main` that touches `web/**`, or on manual dispatch.
+- [ ] **cron-job.org jobs** — two, in addition to any single-user job already
+      set up per [cron-job.org setup](#cron-job-org-setup):
+  - Saturday 09:45 Europe/Madrid, same `book.yml` dispatch URL, body
+    `{"ref": "main", "inputs": {"mode": "book-all"}}`.
+  - Daily, any time, dispatching `keepalive.yml` instead:
+    `POST https://api.github.com/repos/<OWNER>/<REPO>/actions/workflows/keepalive.yml/dispatches`
+    with the same headers and body `{"ref": "main"}`. This exists because a
+    free Supabase project pauses after a week of no activity, and GitHub
+    disables `schedule:` triggers after 60 days without a commit — the daily
+    ping keeps the project (and, as a backup, the workflow's own `schedule:`
+    trigger) alive.
+
+## Key rotation
+
+Rotate the sealing key pair if the private key may have leaked, or on a
+regular schedule. Rotation invalidates every already-sealed credential —
+each affected user must re-enter their UPV credentials once.
+
+1. Run `python -m upv_auto seal-keygen --key-id v2` (bump the id each time).
+2. Add its `VITE_SEAL_PUBLIC_KEY`/`VITE_SEAL_KEY_ID` as the new GitHub
+   Actions secret values (this replaces the values `pages.yml` bakes into
+   the next build) and merge its `SEAL_PRIVATE_KEYS` entry into the existing
+   JSON secret — **keep the old `key_id` in `SEAL_PRIVATE_KEYS` for now**.
+3. Redeploy Pages (push to `main`, or dispatch `pages.yml` manually) so new
+   sign-ups and re-entries seal against `v2`.
+4. A user whose stored credential still carries the old `key_id` is prompted
+   to re-enter it (`CredentialOpener` raises `CredentialsUnavailable` for an
+   unknown key). Give this at least one full Saturday.
+5. Once every stored credential uses the new `key_id` (or after one
+   Saturday's `book-all` run has flagged the stragglers), remove the old
+   entry from `SEAL_PRIVATE_KEYS`.
+
+## Migrating the current single user
+
+For an existing single-user deployment moving to the multi-user app, without
+losing a Saturday of booking:
+
+1. Complete [Owner setup](#owner-setup-one-time) above — the Supabase
+   project, Edge Functions, secrets, and Pages deploy — while the existing
+   single-user `book` cron job keeps running unchanged.
+2. Sign up on the deployed Pages URL as the same person, enter the same UPV
+   credentials, and rebuild the same booking queue in the UI.
+3. Validate end to end: run `python -m upv_auto book-all --now` locally or
+   via a manual `book.yml` dispatch (`mode: book-all`), with only this one
+   account signed up, and confirm the booking and the summary email arrive.
+4. Switch the existing cron-job.org job's body from
+   `{"inputs": {"mode": "book"}}` to `{"inputs": {"mode": "book-all"}}`
+   (same dispatch URL, same PAT) and add the two new jobs from
+   [Owner setup](#owner-setup-one-time) (`book-all`'s Saturday trigger is
+   this same switched job — do not create a duplicate).
+5. After one successful Saturday under `book-all`, delete the
+   `UPV_USERNAME`/`UPV_PASSWORD` GitHub Actions secrets. `book-all` never
+   reads them (`load_config(require_upv_credentials=False)`); they only
+   remain useful for the single-user `book`/`check-login`/`list-groups`
+   modes, which stay fully available (see [Local development](#local-setup)
+   below) if you ever want to fall back.
+
+Rollback at any point before step 5: switch the cron job's body back to
+`{"inputs": {"mode": "book"}}`.
+
 ## Local setup
+
+The commands below are the single-user, `config.yaml`-only path — no
+Supabase project needed. They still work unchanged after the multi-user app
+exists; `book-all`/`refresh` are additive commands, not replacements.
 
 ```bash
 python -m venv .venv
@@ -158,7 +334,18 @@ in order, and the UPV limit as bubbles: at most 10 activity sessions at once,
 of which at most 6 of this activity. Adding a group beyond the limit is
 refused by the API, not just hidden in the UI.
 
-## GitHub Actions setup
+`web/` is shared by both apps: set `VITE_BACKEND=local` (e.g. in
+`web/.env.local`) to force the FastAPI backend above, even when
+`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` are also set — this is what
+keeps `serve --demo` and local frontend dev working without touching
+Supabase. Unset (or any other value), it talks to Supabase directly; see
+[Multi-user architecture](#multi-user-architecture).
+
+## GitHub Actions setup (single-user mode)
+
+Multi-user deployments should follow [Owner setup](#owner-setup-one-time)
+instead — this section is for the original single-user `book` mode only,
+kept working unchanged.
 
 1. Push this code to a GitHub repository. Public is fine, and is what this
    one uses: credentials live in Actions secrets, never in the repository, and
@@ -182,6 +369,9 @@ The workflow (`.github/workflows/book.yml`) only has a `workflow_dispatch`
 trigger — no `schedule` — because cron-job.org drives the timing.
 
 ## cron-job.org setup
+
+Single-user `book` mode, as set up above. For the multi-user `book-all` and
+`keepalive` dispatch jobs, see [Owner setup](#owner-setup-one-time).
 
 Create a job that sends, every Saturday at **09:45 Europe/Madrid**:
 
@@ -218,4 +408,12 @@ repository.
   manually and investigate why UPV is prompting for it.
 - On any login failure, a screenshot is saved to `artifacts/` (gitignored
   locally, uploaded as a workflow artifact on failure, retained 3 days) to
-  help debugging. Passwords and cookie values are never logged.
+  help debugging. Passwords and cookie values are never logged. `book-all`
+  and `refresh` upload no artifacts at all — a CAS screenshot could expose
+  one user's username. `book-all` also runs under a fixed `run-name`
+  ("Multi-user booking batch", never per-user data); `refresh`'s only input
+  is already an opaque UUID, so its run title is never identity-revealing.
+- Multi-user logs never show a UPV username, password, group code, or email
+  in the clear: a redacting filter masks them before they reach the GitHub
+  Actions log, and `::add-mask::` is also emitted for each secret value.
+  Users are logged only as `user i/N`.
