@@ -1,0 +1,83 @@
+schema: spec-driven
+
+context: |
+  Project: upv-auto — automates booking a UPV sports facility slot.
+  Stack: Python 3.11+ package (src/upv_auto), hexagonal architecture
+    (domain/, app/, adapters/, ports.py). FastAPI web adapter
+    (adapters/web/api.py). React 18 + Vite + TypeScript frontend (web/).
+  Testing: pytest (tests/), run inside the project venv at .venv.
+    No test command exists for the web/ frontend.
+  CI: GitHub Actions workflow .github/workflows/book.yml (manual dispatch,
+    runs `python -m upv_auto` with a pinned Playwright version).
+  Style: no configured Python linter/type checker/formatter
+    (no ruff/mypy/black config). Frontend has tsc (build-time type check)
+    but no lint config.
+
+strict_tdd: false
+strict_tdd_reason: >
+  No single workspace-level command covers every in-scope project.
+  `pytest -q` covers only the Python package (src/upv_auto, tests/);
+  the web/ frontend (React + Vite + TypeScript) has no test command
+  configured in web/package.json.
+
+testing:
+  projects:
+    - path: "."
+      stack: "Python 3.11+ (hexagonal: domain/app/adapters/ports.py)"
+      test_command: "pytest -q"
+      test_command_note: "Run inside the project venv at .venv (e.g. `.venv\\Scripts\\activate` on Windows, then `pytest -q`, or `.venv\\Scripts\\python.exe -m pytest -q` directly)."
+      framework: "pytest"
+      test_layers:
+        unit: true
+        integration: true
+        e2e: false
+      coverage:
+        available: false
+        command: ""
+      quality:
+        linter: ""
+        type_checker: ""
+        formatter: ""
+    - path: "web"
+      stack: "React 18 + Vite + TypeScript"
+      test_command: ""
+      test_command_note: "No test script defined in web/package.json (scripts: dev, build, preview only)."
+      framework: ""
+      test_layers:
+        unit: false
+        integration: false
+        e2e: false
+      coverage:
+        available: false
+        command: ""
+      quality:
+        linter: ""
+        type_checker: "tsc -b (part of `npm run build`)"
+        formatter: ""
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Note whether a change touches the CI workflow secrets or booking window timing
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Preserve the hexagonal boundary: domain/ stays free of I/O
+    - Document architecture decisions with rationale
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+    - Flag any task touching web/ separately from src/upv_auto/ (no shared test command)
+  apply:
+    guidelines:
+      - Follow existing hexagonal boundaries (domain/, app/, adapters/, ports.py)
+      - Never modify application code during sdd-init
+    tdd: false
+    test_command: "pytest -q"
+  verify:
+    test_command: "pytest -q"
+    build_command: "npm run build --prefix web"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
