@@ -72,3 +72,18 @@ export const Alert = ({ size = 15 }: IconProps) => (
     <path d="M12 8v5M12 16h.01" />
   </svg>
 );
+
+export const Eye = ({ size = 16 }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+export const EyeOff = ({ size = 16 }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M3 3l18 18" />
+    <path d="M9.9 4.24A10.4 10.4 0 0 1 12 4c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3 3.9M6.6 6.6C4.1 8.3 2 12 2 12s3.6 7 10 7a10 10 0 0 0 4-.8" />
+    <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+  </svg>
+);

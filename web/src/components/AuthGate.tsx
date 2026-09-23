@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { BACKEND, getSession, hasCredentials, onAuthStateChange } from "../api";
-import { Clock } from "./icons";
+import { Clock, Refresh } from "./icons";
 import { SignIn } from "./SignIn";
 import { CredentialsForm } from "./CredentialsForm";
 import { ThemeToggle } from "./ThemeToggle";
@@ -68,11 +68,22 @@ export function AuthGate({ children }: { children: ReactNode }) {
           </span>
           upv-auto
         </span>
-        {state.phase === "loading" && <p className="authgate-hint">Cargando…</p>}
-        {state.phase === "signed-out" && <SignIn />}
-        {state.phase === "needs-credentials" && (
-          <CredentialsForm onSaved={() => setState({ phase: "ready" })} />
-        )}
+        {/* Keyed by phase so each step (loading → sign-in → credentials) gets
+            its own short settle instead of jumping straight to the next. */}
+        <div className="authgate-step" key={state.phase}>
+          {state.phase === "loading" && (
+            <p className="authgate-hint authgate-loading">
+              <span className="spin">
+                <Refresh size={14} />
+              </span>
+              Cargando…
+            </p>
+          )}
+          {state.phase === "signed-out" && <SignIn />}
+          {state.phase === "needs-credentials" && (
+            <CredentialsForm onSaved={() => setState({ phase: "ready" })} />
+          )}
+        </div>
       </div>
       <div className="authgate-theme">
         <ThemeToggle />

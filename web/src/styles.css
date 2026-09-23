@@ -582,10 +582,44 @@ button,
 .authgate-brand {
   justify-content: center;
 }
+/* Remounted (via `key`) each time AuthGate swaps loading/sign-in/credentials:
+   a short settle so the step change reads as a state transition, not a jump. */
+.authgate-step {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out);
+}
+@starting-style {
+  .authgate-step {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.authgate-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
 .authgate-form {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+/* Title + hint remount (via `key={mode}`) when SignIn toggles sign-in/sign-up,
+   so the copy change gets the same short settle as a step change. */
+.authgate-switchable {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+}
+@starting-style {
+  .authgate-switchable {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 .authgate-title {
   font-size: 22px;
@@ -635,27 +669,77 @@ button,
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-.authgate-error,
-.authgate-info {
+/* Wraps a password input with an inline reveal toggle. */
+.field-control {
+  position: relative;
+  display: flex;
+}
+.field-control input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 44px;
+}
+.field-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 0 12px 12px 0;
+  background: none;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 160ms ease, transform 120ms var(--ease-out);
+}
+.field-toggle:hover {
+  color: var(--accent-ink);
+}
+.field-toggle:active {
+  transform: scale(0.92);
+}
+.authgate-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin: 0;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border-radius: 10px;
   font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
 }
-.authgate-error {
+@starting-style {
+  .authgate-banner {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+.authgate-banner svg {
+  flex: none;
+  margin-top: 1px;
+}
+.authgate-banner.error {
   background: var(--accent-soft);
   color: var(--accent-ink);
 }
-.authgate-info {
+.authgate-banner.info {
   background: var(--ok-bg);
   color: var(--ok);
 }
 .authgate-switch {
+  min-height: 44px;
   padding: 4px;
   border: 0;
   background: none;
   color: var(--muted);
   font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   transition: color 160ms ease;
 }
@@ -764,7 +848,12 @@ button,
   .toggle .knob,
   .toggle .ico,
   .bubble,
-  .authgate-card {
+  .authgate-card,
+  .authgate-step,
+  .authgate-switchable,
+  .authgate-banner,
+  .field-toggle,
+  .field-toggle:active {
     transition: opacity 150ms linear;
     transform: none;
   }
