@@ -196,6 +196,30 @@ button,
 }
 
 /* ---------- theme toggle ---------- */
+/* Icon-only topbar action, sized to match the theme toggle's height so the
+   two sit on the same baseline. */
+.icon-button {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--switch);
+  box-shadow: var(--shadow);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  transition: color 160ms ease, transform 120ms var(--ease-out);
+}
+.icon-button:hover {
+  color: var(--accent-ink);
+}
+.icon-button:active {
+  transform: scale(0.92);
+}
+
 .toggle {
   position: relative;
   width: 80px;

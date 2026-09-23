@@ -5,6 +5,7 @@ import {
   getConfig,
   getSchedule,
   putBookings,
+  signOut,
   type Booking,
   type Config,
   type Schedule,
@@ -16,7 +17,7 @@ import { QueuePanel } from "./components/QueuePanel";
 import { QueuePanelSkeleton } from "./components/QueuePanelSkeleton";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { WeekBar } from "./components/WeekBar";
-import { Alert, Clock, Refresh, Shield } from "./components/icons";
+import { Alert, Clock, Refresh, Shield, SignOut } from "./components/icons";
 import { describeActivity } from "./activity";
 import { NextRun } from "./components/NextRun";
 
@@ -173,6 +174,17 @@ export default function App() {
             </span>
           )}
           <ThemeToggle />
+          {BACKEND === "supabase" && (
+            <button
+              className="icon-button press"
+              type="button"
+              onClick={() => void signOut()}
+              title="Cerrar sesión"
+              aria-label="Cerrar sesión"
+            >
+              <SignOut />
+            </button>
+          )}
         </span>
       </header>
 
