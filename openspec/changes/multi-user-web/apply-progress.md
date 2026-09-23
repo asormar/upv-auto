@@ -122,3 +122,82 @@ No further cut is honest without deleting a task 2.1-2.6 deliverable outright: `
 - Current work unit: Unit 2 — Browser auth + sealed-box + `api.ts`
 - Boundary: starts from the single-user `web/src/api.ts` + no auth gate; ends with a working `VITE_BACKEND` facade (local FastAPI unaffected), sign-up/sign-in/credential-sealing UI, and a functional (if agenda-less until Phase 5) Supabase-backed queue
 - Estimated review budget impact: ~927 authored lines (851 additions + 76 deletions), well above the 400-line default and above this slice's own ~350-450 forecast; recommend `size:exception` — the unit is atomic (splitting further would ship a facade with no usable auth UI, or auth UI with no facade to call), and one honest trimming pass (removing the Phase-5-duplicating schedule-view port) already happened
+
+## Work Unit 3 — Python Supabase Adapter + `book-all` Loop (PR 3)
+
+Status: complete (all Phase 3 tasks). Chain strategy confirmed `stacked-to-main`, PR 3 of 6.
+
+### Completed Tasks
+- [x] 3.1 RED `tests/test_run_batch.py::test_one_users_login_failure_does_not_block_the_others` — user B's `AuthenticationFailed` login is recorded as `incomplete`; A and C still book and are recorded `booked`
+- [x] 3.2 RED `tests/test_run_batch.py::test_empty_roster_produces_no_result_and_no_email` — an empty roster (mirrors `batch_roster()` excluding empty queues) calls `record_result` and the notifier factory zero times
+- [x] 3.3 RED `tests/test_turns.py` — `TurnScheduler` FIFO/starvation logic (no real threads needed) plus a real-thread mutual-exclusion test (`max_concurrent == 1` across 3 users x 4 rounds each) and `TurnTakingClock` sleep/yield/reacquire behavior
+- [x] 3.4 RED `tests/test_sealed_box.py` — a fixture actually sealed by the real `libsodium-wrappers` npm package (generated once via `node`, committed as `tests/fixtures/sealed_credentials_interop.json`) opens correctly with PyNaCl's `SealedBox`; unknown `key_id`, wrong private key, and corrupt ciphertext all raise `CredentialsUnavailable`
+- [x] 3.5 RED `tests/test_log_redaction.py` — `caplog` has no username/password/group-code/email/UUID after `RedactingFilter`; `configure_log_hygiene` sets the `httpx` logger to WARNING
+- [x] 3.6 `src/upv_auto/ports.py` — added `UserDirectory` (`roster`, `record_result`, `claim_request`, `save_schedule`, `finish_request`) and `CredentialOpener` (`open`), matching design.md's Interfaces/Contracts exactly
+- [x] 3.7 `src/upv_auto/app/turns.py` — `TurnScheduler` (condition-variable FIFO rotation), `TurnTakingClock` (yields on `sleep()`, reacquires after), `BufferedNotifier`
+- [x] 3.8 `src/upv_auto/app/run_batch.py` — roster loop (one thread per user), per-user `dataclasses.replace(config, credentials=..., bookings=..., email=None)`, try/except/finally per user (`booked`/`incomplete`/`credentials_unavailable`/`error`), sequential per-user email send after every thread joins
+- [x] 3.9 `src/upv_auto/adapters/supabase_rest.py` — `SupabaseRestUserDirectory`: httpx PostgREST client with the service-role key, implementing all 5 `UserDirectory` methods plus one extra `upsert_settings` (see Notes)
+- [x] 3.10 `src/upv_auto/adapters/sealed_box.py` — `SealedBoxOpener` (PyNaCl `SealedBox`, `key_id -> private key` map) + `generate_keypair()`
+- [x] 3.11 `src/upv_auto/adapters/log_redaction.py` — `RedactingFilter` (registered secrets + group-code/email/UUID patterns), `configure_log_hygiene`, `mask_for_actions`
+- [x] 3.12 `src/upv_auto/__main__.py` — `book-all [--now]` and `seal-keygen [--key-id]` subcommands, each with its own config/secret loading (see Deviations)
+- [x] 3.13 `pyproject.toml` — `multiuser = ["pynacl>=1.5"]` extra; installed into `.venv`
+- [x] 3.14 `.github/workflows/book.yml` — `book-all` mode option, `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`/`SEAL_PRIVATE_KEYS` secrets, no artifact upload for `book-all`, fixed `run-name` for `book-all`
+- [x] 3.15 `.venv\Scripts\python.exe -m pytest -q` — 110 passed (79 baseline + 31 new)
+
+### Files Changed
+| File | Action | Lines (+/-) |
+|------|--------|-------------|
+| `src/upv_auto/app/turns.py` | Created | +104/-0 |
+| `src/upv_auto/app/run_batch.py` | Created | +199/-0 |
+| `src/upv_auto/adapters/supabase_rest.py` | Created | +169/-0 |
+| `src/upv_auto/adapters/sealed_box.py` | Created | +66/-0 |
+| `src/upv_auto/adapters/log_redaction.py` | Created | +80/-0 |
+| `src/upv_auto/ports.py` | Modified | +43/-1 |
+| `src/upv_auto/domain/models.py` | Modified | +22/-0 |
+| `src/upv_auto/domain/errors.py` | Modified | +7/-0 |
+| `src/upv_auto/config.py` | Modified | +22/-8 (`_parse_booking` renamed to public `parse_booking_dict`; `require_upv_credentials` flag added) |
+| `src/upv_auto/__main__.py` | Modified | +137/-2 |
+| `pyproject.toml` | Modified | +3/-0 |
+| `.github/workflows/book.yml` | Modified | +23/-5 |
+| `tests/fakes.py` | Modified | +10/-3 (`FakeClock` made thread-safe) |
+| `tests/test_config.py` | Modified | +11/-0 |
+| `tests/test_turns.py` | Created | +170/-0 |
+| `tests/test_run_batch.py` | Created | +218/-0 |
+| `tests/test_sealed_box.py` | Created | +78/-0 |
+| `tests/test_log_redaction.py` | Created | +63/-0 |
+| `tests/test_supabase_rest.py` | Created | +165/-0 |
+| `tests/fixtures/sealed_credentials_interop.json` | Created | +9/-0 |
+
+Total authored: **~1610 additions + ~19 deletions ≈ 1629 changed lines**, far above the 400-line default and above this slice's own ~350-450 forecast — larger than PR 1 (~505) and roughly comparable to PR 2 (~927). No further honest trim: `run_batch.py`/`turns.py` are one cohesive turn-taking mechanism (splitting the scheduler from its caller would ship an untestable half); `supabase_rest.py` implements the full `UserDirectory` contract in one file per design.md's single "Create" row (a partial adapter would leave Phase 4 needing to add methods to a file design already scoped as complete); the five new RED test files are the task list's own explicit deliverables. Recommend **`size:exception`**, consistent with PR 1 and PR 2's precedent.
+
+### Work Unit Evidence
+| Evidence | Value |
+|---|---|
+| Focused test command and exact result | `.venv\Scripts\python.exe -m pytest -q` — 110 passed, 0 failed (79 baseline + 31 new: 4 `test_run_batch.py`, 9 `test_turns.py`, 5 `test_sealed_box.py`, 4 `test_log_redaction.py`, 8 `test_supabase_rest.py`, 1 `test_config.py`) |
+| Runtime harness command/scenario and exact result | No live Supabase project (OWNER 0.1/1.5 not run) and no real UPV credentials, so `book-all` was not run end to end. Two real-boundary checks instead: (1) `tests/fixtures/sealed_credentials_interop.json` was generated by actually running `node` against the real `libsodium-wrappers` package already installed under `web/node_modules` (the same package `web/src/seal.ts` imports) — sealing a payload there and opening it with PyNaCl in `test_sealed_box.py` proves the browser-to-runner wire format really round-trips, not just PyNaCl-with-itself; (2) CLI smoke tests: `python -m upv_auto seal-keygen --key-id v1` printed a real usable key pair, `python -m upv_auto book-all --help` and top-level `--help` show the new subcommands correctly, and `python -m upv_auto book-all --now` (no Supabase secrets set) failed fast with `Missing required environment variable: SUPABASE_URL` — confirming `load_config(..., require_upv_credentials=False)` does NOT demand `UPV_USERNAME`/`UPV_PASSWORD` (the scenario OWNER 6.5 depends on). `npm run build --prefix web` also rerun as a secondary regression check (unaffected by this unit, still 103 modules, no errors) |
+| Rollback boundary | Delete `src/upv_auto/app/turns.py`, `app/run_batch.py`, `adapters/supabase_rest.py`, `adapters/sealed_box.py`, `adapters/log_redaction.py`, `tests/test_turns.py`, `test_run_batch.py`, `test_sealed_box.py`, `test_log_redaction.py`, `test_supabase_rest.py`, `tests/fixtures/sealed_credentials_interop.json`. Revert `ports.py`, `domain/models.py`, `domain/errors.py`, `config.py`, `__main__.py`, `pyproject.toml`, `.github/workflows/book.yml`, `tests/fakes.py`, `tests/test_config.py`. No file from Work Unit 1 or 2 was touched beyond this list |
+
+### Deviations from Design
+- **`load_config(require_upv_credentials=False)`** (new keyword-only parameter, default `True`, so single-user callers are unaffected): design.md's per-user config line reads `dataclasses.replace(load_config(), credentials=…, …)`, implying a bare `load_config()` call — but `load_config()` unconditionally requires `UPV_USERNAME`/`UPV_PASSWORD` env vars, and design.md's own Migration/Rollout section says those two secrets are **deleted** once migration is verified. Once deleted, a bare `load_config()` call in `book-all` would raise `ConfigError` every week. Added the flag so `book-all` can load `config.yaml`'s activity/window/limits/timezone without ever needing a single shared UPV login — the real per-user credentials are substituted in immediately after via `dataclasses.replace`, exactly as design.md describes. Noting this because it is a literal deviation from the design snippet's wording, even though it is required for the design's own stated end state to actually work.
+- **`app_settings` upsert added to `book-all`** (`SupabaseRestUserDirectory.upsert_settings`, called once per run from `__main__._book_all` before `run_batch`): design.md's Schema table says `app_settings` is "upserted from `config.yaml` on every run," but no task in tasks.md (Phase 3 or later) assigns this. Without it, the web frontend's `getConfig()` (already built in PR 2, reading `app_settings.settings`) would see `activity`/`window`/`limits` stay `{}` forever — the queue panel would work but the activity name/window/limits shown to the user never would. Implemented as a small extra method on the adapter, not part of the `UserDirectory` protocol (not used by `run_batch`, called directly by `__main__` as the composition root) — see design.md's own gap here.
+- **`config.parse_booking_dict`** — the design's per-file table doesn't call this out, but `supabase_rest.roster()` needs the exact same `{"group_code": ..., "alternatives": [...]}`  -> `BookingTarget` parsing `load_config()` already does for `config.yaml`'s `bookings:` block (and `booking_queue.bookings` uses the identical JSON shape — confirmed by reading PR 2's `web/src/api/supabase.ts`/`Booking` type). Renamed the existing private `_parse_booking` to public `parse_booking_dict` and reused it, rather than duplicating group-code validation in the adapter.
+- **`notifier_factory` parameter on `run_batch`** — design.md's Interfaces/Contracts section doesn't list this on `UserDirectory` or as a separate parameter, but "one email per user, sent sequentially after all threads join" (design.md's Notification decision) requires *something* to build a real per-user `Notifier` (keyed by that user's own email from the roster) after the turn-taking phase ends. Added `notifier_factory: Callable[[UserRecord], Notifier]`, called only after every thread has joined — SMTP never runs inside the turn-taking window.
+- **`upv_credentials` lookup in `claim_request`** — a two-step PostgREST call (`refresh_requests` by id, then `upv_credentials` by the returned `user_id`) rather than one embedded query, because PostgREST resource embedding needs a direct FK between the two tables, and both only reference `auth.users` independently (confirmed by reading `0001_multi_user.sql`). This method is Phase 4 territory functionally (`refresh_user.py` doesn't exist yet), but the adapter method itself was in scope per design.md's single "Create" row for `supabase_rest.py`, so it needed *a* correct implementation now, even though `run_batch`/`book-all` never calls it this PR.
+
+### Notes / Judgment Calls
+- `RedactingFilter` is attached directly to the **root logger** (`logging.getLogger().addFilter(...)`), not to each handler individually — attaching to the logger means pytest's own `caplog` handler (added later, at test time) still sees already-redacted records, which is what task 3.5's RED test needs. Attaching only to existing handlers at `configure_log_hygiene()` time would miss caplog entirely.
+- `RedactingFilter`/`FakeClock` were made explicitly thread-safe (an internal `threading.Lock`) because `run_batch` calls `RedactingFilter.register()` from several user threads concurrently, and `tests/fakes.py`'s `FakeClock` is shared across `TurnTakingClock`s in `test_turns.py`'s concurrency tests. Neither was thread-safe before this PR (not needed by anything single-user).
+- `TurnScheduler.finish()` is called from a `finally` block in `run_batch._process_user`, unconditionally, even for a user who never reached `scheduler.acquire()` (e.g. `CredentialsUnavailable` before any UPV interaction) — without this, a user who fails early would permanently occupy a rotation slot and deadlock everyone queued behind them once their turn comes up. This is the one correctness-critical detail in the turn-taking design that isn't spelled out in design.md and would only surface as an intermittent multi-user hang, not a single-user test failure.
+- `book-all`'s adapter/app imports (`log_redaction`, `sealed_box`, `supabase_rest`, `run_batch`) are inside `_book_all()`, wrapped in `try/except ImportError`, mirroring the existing `_serve()` pattern for the `web` extra — the single-user CLI (`book`/`check-login`/`list-groups`/`serve --demo`) stays fully functional even without the `multiuser` extra installed.
+- `EmailNotifier`/`ConsoleNotifier` needed no changes: `ConsoleNotifier.notify()` logs the raw summary text at INFO, and since `RedactingFilter` is attached to the root logger for the whole `book-all` process, group codes in that text are scrubbed to `[group]` automatically — this only holds because the filter is process-wide, not per-adapter.
+
+### Remaining Tasks (later work units, not this agent's scope)
+- [ ] Phase 4 (PR 4): Refresh — Edge rate-limit + Realtime (finishes `refresh/index.ts`, `useRefreshStatus.ts`, wires `App.tsx`'s `refreshing` state; will exercise `claim_request`/`save_schedule`/`finish_request` for the first time)
+- [ ] Phase 5 (PR 5): Pages deploy + Vite `base`, `scheduleView.ts` (task 5.3)
+- [ ] Phase 6 (PR 6): Migration + docs
+
+### Workload / PR Boundary
+- Mode: stacked PR slice (`stacked-to-main`), PR 3 of 6
+- Current work unit: Unit 3 — Python Supabase adapter + `book-all` loop
+- Boundary: starts from no multi-user Python code at all (single-user `book`/`config.yaml` path only); ends with a fully tested, turn-taking, per-user-isolated `book-all` command wired into `book.yml`, backed by a real Supabase PostgREST adapter and a JS-libsodium-interop-proven sealed-box opener — not yet runnable end to end without a live Supabase project (OWNER 0.1/1.5) and real sealed credentials
+- Estimated review budget impact: ~1629 authored lines, above the 400-line default and above this slice's own ~350-450 forecast; recommend `size:exception`, consistent with PR 1 and PR 2
