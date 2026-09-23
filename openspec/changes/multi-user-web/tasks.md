@@ -103,7 +103,7 @@ Satisfies: platform-operations (Pages hosting).
 
 ## Phase 6: Migration + Docs (PR 6)
 
-- [ ] 6.1 Modify `README.md`: setup, key rotation, migration, local dev
+- [x] 6.1 Modify `README.md`: setup, key rotation, migration, local dev
 - [ ] OWNER 6.2 Sign up on the deployed Pages URL, enter credentials and the queue for the current user
 - [ ] OWNER 6.3 Run `book-all --now` scoped to this one account to validate end-to-end
 - [ ] OWNER 6.4 Switch the cron-job.org batch body to `mode: book-all`

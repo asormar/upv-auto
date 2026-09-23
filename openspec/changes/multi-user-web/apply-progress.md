@@ -298,11 +298,61 @@ None — `vite.config.ts`'s `base` line matches design.md's File Changes table v
 - The `"base" option should start with a slash` Vite warning seen during local verification (and a mangled `/Program Files/Git/upv-auto/` asset path) is a Git-Bash/MSYS artifact: MSYS auto-converts any argument or env var value that looks like a POSIX absolute path (`/upv-auto/`) into a Windows path before Node ever sees it. This never happens on the Linux `ubuntu-latest` GitHub Actions runner `pages.yml` actually runs on, and was confirmed non-reproducing locally too with `MSYS_NO_PATHCONV=1` (see Work Unit Evidence) — `dist/index.html` then correctly read `/upv-auto/assets/...`. Documented here so a future contributor testing this on Windows Git Bash doesn't mistake it for a code bug.
 - `scheduleView.ts` also ports `count_queued`/`count_enrolled_now` (not just `build_days`), even though task 5.3 names only `build_days` and `getSchedule()` already had inline equivalents (`config.bookings.length`, a local `countEnrolledThisWeek`) since Work Unit 2. Moved both into the new file and imported them, rather than leaving three ad hoc functions split across two files: `scheduleView.ts` is now the one module mirroring `schedule_view.py`'s full surface, which is what "port `build_days` to TypeScript" means in context (design.md's Schema section: "`build_days` is ported to TypeScript", singular file, not singular function) and matches the design's own File Changes table entry for `scheduleView.ts`.
 
-### Remaining Tasks (later work unit, not this agent's scope)
-- [ ] Phase 6 (PR 6): Migration + docs — README setup/rotation/migration/local-dev section (including the two Phase 4 Edge Function secrets `GITHUB_REPO`/`GITHUB_DISPATCH_TOKEN` still undocumented), plus every OWNER-only task across all six phases
+### Remaining Tasks (later work unit, at the time)
+- [x] Phase 6 (PR 6): Migration + docs — README setup/rotation/migration/local-dev section (including the two Phase 4 Edge Function secrets `GITHUB_REPO`/`GITHUB_DISPATCH_TOKEN` — now documented)
 
 ### Workload / PR Boundary
 - Mode: stacked PR slice (`stacked-to-main`), PR 5 of 6
 - Current work unit: Unit 5 — Pages deploy + Vite `base`
 - Boundary: starts from an unconfigured `base` (Pages-incompatible asset URLs) and no deploy workflow; ends with a Pages-ready build (`base` driven by `VITE_BASE_PATH`, defaulting to `/` so local dev is unaffected), a `pages.yml` that builds and deploys via the official actions, and a populated (no longer `days: []`) Supabase-backed agenda view — not yet deployed live (OWNER 0.4, enabling Pages in repo settings, is out of agent scope)
 - Estimated review budget impact: ~203 authored lines, the first slice of this change to land under the 400-line default; no `size:exception` needed
+
+## Work Unit 6 — Migration + Docs (PR 6, agent-scoped tasks only)
+
+Status: complete (the one non-OWNER task, 6.1). Chain strategy `stacked-to-main`, PR 6 of 6 (final agent slice). Every OWNER-only task (6.2-6.5, plus the earlier OWNER 0.1-0.5 and 1.5) stays unchecked — out of agent scope by design, requiring a live Supabase project, real UPV credentials, and cron-job.org access the agent does not have.
+
+### Completed Tasks
+- [x] 6.1 `README.md` — added: "Multi-user architecture" (data-flow diagram, browser/Supabase/Actions roles, what users see), "Owner setup (one-time)" (checklist: Supabase project + migration + Edge Function deploy, Edge Function secrets, `seal-keygen` + `SEAL_PRIVATE_KEYS`/`VITE_SEAL_*`, GitHub Actions secrets table, enabling Pages, the two additional cron-job.org jobs), "Key rotation", "Migrating the current single user"; clarified the pre-existing "Local setup"/"Web UI"/"GitHub Actions setup"/"cron-job.org setup" sections as the single-user path (still fully functional, cross-linked instead of duplicated); updated "Notes" with `book-all`/`refresh`'s no-artifacts/fixed-`run-name` behavior and the log-redaction guarantee
+
+### Files Changed
+| File | Action | Lines (+/-) |
+|------|--------|-------------|
+| `README.md` | Modified | +204/-6 (git-diff-verified) |
+| `openspec/changes/multi-user-web/tasks.md` | Modified | 1 line (checkbox) |
+
+Total authored: **204 additions + 6 deletions = 210 changed lines** (git-diff-verified), well within the 400-line default. No `size:exception` needed — the second slice, after PR 5, to land under budget.
+
+### Work Unit Evidence
+| Evidence | Value |
+|---|---|
+| Focused test command and exact result | Documentation-only unit; no Python or web source files touched, so both regression suites were run to confirm nothing else changed: `.venv\Scripts\python.exe -m pytest -q` — 117 passed, 0 failed; `npm run build --prefix web` — passes, 105 modules, no type errors |
+| Runtime harness command/scenario and exact result | N/A: documentation has no runtime boundary. Instead, every secret/variable name written into the README was cross-checked against the actual source it must match rather than invented: `Deno.env.get(...)` calls in `supabase/functions/*/index.ts` and `_shared/cors.ts` (`ALLOWED_ORIGIN`, `GITHUB_REPO`, `GITHUB_DISPATCH_TOKEN`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`), `secrets.*`/`env.*` blocks in `.github/workflows/{book,refresh,keepalive,pages}.yml`, `_seal_keygen()`'s printed output in `src/upv_auto/__main__.py`, `import.meta.env.*` reads in `web/src/{api.ts,seal.ts,api/supabase.ts}`, `claim_refresh()`'s throttle literals (6 h / 5 min / 10 per day / 15 min expiry) in `supabase/migrations/0001_multi_user.sql`, and the `user {index}/{total}` log label in `src/upv_auto/app/run_batch.py`. `refresh.yml` was also re-read to confirm it carries no `run-name:` field (unlike `book.yml`), correcting an initial draft claim that both workflows set one |
+| Rollback boundary | Revert `README.md` to its pre-Phase-6 text (the six sections added: Multi-user architecture, Owner setup, Key rotation, Migrating the current single user, plus the cross-link sentences added to Local setup/Web UI/GitHub Actions setup/cron-job.org setup/Notes); revert `tasks.md`'s 6.1 checkbox. No other file touched |
+
+### Deviations from Design
+None — design.md's File Changes table lists `README.md` (Modify) for "Setup, rotation, migration, local dev", matching this unit's scope exactly. The session's explicit SCOPE instruction further narrowed this to only the non-OWNER Phase 6 task (6.1); OWNER 6.2-6.5 were left unchecked as directed.
+
+### Notes / Judgment Calls
+- Restructured rather than purely appended: the pre-existing "GitHub Actions setup" and "cron-job.org setup" H2 headings were relabeled/annotated as single-user-only (with a cross-link to "Owner setup (one-time)") instead of being duplicated under a new heading, so the multi-user and single-user secret/cron instructions do not silently drift apart over time. The original content and commands under those headings were not altered, only the surrounding framing sentences.
+- `SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` are documented as **not** requiring a manual `supabase secrets set` for Edge Functions — Supabase auto-injects these three into every deployed Edge Function. This is standard, well-established Supabase platform behavior (distinct from the same-named GitHub Actions repository secrets `book.yml`/`refresh.yml`/`keepalive.yml` read via `secrets.*`, which do need to be set by hand); the README calls out that these are two separate places sharing names, to prevent the owner from either skipping the GitHub Actions secrets or trying to set the Supabase ones unnecessarily.
+- The "What users see" walkthrough intentionally omits detailed loading-animation description, per design.md's own stated scope ("Loading-animation design is out of scope; only the presence of a loading state is specified" — Work Unit 4's notes) — it says a loading state exists, not what it looks like.
+- Did not read or print `.env`/`.env.example` at any point (per the session's explicit instruction); `web/.env.example`'s exact variable list was independently reconstructed instead from `import.meta.env.*` reads in the TypeScript source, which is also the more authoritative source for "what the code actually reads."
+- No real secrets, tokens, keys, or usernames appear anywhere in the new text — every example uses a placeholder (`<OWNER>/<REPO>`, `owner/repo`, `https://<owner>.github.io`) or a value already public in the codebase (env var *names*, not values).
+
+### Remaining Tasks (repository-wide, all OWNER-only — outside every agent's scope by design)
+- [ ] OWNER 0.1 Create the Supabase project (free tier)
+- [ ] OWNER 0.2 Run `seal-keygen` (Phase 3), store the private key as GitHub secret `SEAL_PRIVATE_KEYS`
+- [ ] OWNER 0.3 Set GitHub secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SEAL_PUBLIC_KEY`, `VITE_SEAL_KEY_ID`, dispatch PAT
+- [ ] OWNER 0.4 Enable GitHub Pages (source: GitHub Actions) in repo settings
+- [ ] OWNER 0.5 Configure cron-job.org: Saturday 09:45 Europe/Madrid dispatch (`book-all`) and daily keepalive dispatch
+- [ ] OWNER 1.5 Apply the migration and deploy both Edge Functions to the live Supabase project
+- [ ] OWNER 6.2 Sign up on the deployed Pages URL, enter credentials and the queue for the current user
+- [ ] OWNER 6.3 Run `book-all --now` scoped to this one account to validate end-to-end
+- [ ] OWNER 6.4 Switch the cron-job.org batch body to `mode: book-all`
+- [ ] OWNER 6.5 After one successful Saturday, delete the `UPV_USERNAME`/`UPV_PASSWORD` secrets
+
+### Workload / PR Boundary
+- Mode: stacked PR slice (`stacked-to-main`), PR 6 of 6 (final agent slice)
+- Current work unit: Unit 6 — Migration + docs (agent-scoped task 6.1 only)
+- Boundary: starts from a README describing only the single-user app; ends with a README that also documents the multi-user architecture, the owner's one-time setup, key rotation, and the single-user-to-multi-user migration path — the app's code itself is unchanged, and every OWNER task (across all six phases) remains manual, unchecked follow-up
+- Estimated review budget impact: 210 authored lines (git-diff-verified), well under the 400-line default; no `size:exception` needed
