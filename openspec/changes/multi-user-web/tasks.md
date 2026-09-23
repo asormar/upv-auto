@@ -11,9 +11,9 @@
 | Delivery strategy | ask-on-risk |
 | Chain strategy | pending (user decision) |
 
-Decision needed before apply: Yes
+Decision needed before apply: Yes (resolved)
 Chained PRs recommended: Yes
-Chain strategy: pending
+Chain strategy: stacked-to-main (resolved — PR 3 of 6 complete)
 400-line budget risk: High
 
 Ask the user: **Stacked PRs to main** (each slice mergeable alone, matches the design's numbered slices) or **Feature Branch Chain** (a `multi-user-web` tracker accumulates all 6 before merging)? OWNER tasks (Phase 0) are prerequisites, not PR content, and run outside the line budget.
@@ -51,32 +51,32 @@ Satisfies: user-accounts (RLS isolation, deletion cascade), booking-queue (limit
 
 Satisfies: user-accounts (sign-up/in), credential-custody (browser sealing).
 
-- [ ] 2.1 Add `@supabase/supabase-js`, `libsodium-wrappers` to `web/package.json`
-- [ ] 2.2 Create `web/src/api/local.ts`, `web/src/api/supabase.ts`; keep `web/src/api.ts` as the `VITE_BACKEND` facade
-- [ ] 2.3 Create `web/src/seal.ts` (lazy import): `crypto_box_seal` against `VITE_SEAL_PUBLIC_KEY`/`VITE_SEAL_KEY_ID`
-- [ ] 2.4 Create `web/src/components/AuthGate.tsx`, `SignIn.tsx`, `CredentialsForm.tsx`
-- [ ] 2.5 Modify `web/src/App.tsx`, `web/src/main.tsx`: wrap the app in `AuthGate`
-- [ ] 2.6 Test: `npm run build --prefix web`
+- [x] 2.1 Add `@supabase/supabase-js`, `libsodium-wrappers` to `web/package.json`
+- [x] 2.2 Create `web/src/api/local.ts`, `web/src/api/supabase.ts`; keep `web/src/api.ts` as the `VITE_BACKEND` facade
+- [x] 2.3 Create `web/src/seal.ts` (lazy import): `crypto_box_seal` against `VITE_SEAL_PUBLIC_KEY`/`VITE_SEAL_KEY_ID`
+- [x] 2.4 Create `web/src/components/AuthGate.tsx`, `SignIn.tsx`, `CredentialsForm.tsx`
+- [x] 2.5 Modify `web/src/App.tsx`, `web/src/main.tsx`: wrap the app in `AuthGate`
+- [x] 2.6 Test: `npm run build --prefix web`
 
 ## Phase 3: Python Supabase Adapter + `book-all` Loop (PR 3)
 
 Satisfies: weekly-batch-booking (turn-taking, isolation, results, email), credential-custody (unsealing, logs), platform-operations (log hygiene).
 
-- [ ] 3.1 RED `tests/test_run_batch.py`: user B login fails, A and C still processed and recorded
-- [ ] 3.2 RED `tests/test_run_batch.py`: empty queue produces no result row and no email
-- [ ] 3.3 RED `tests/test_turns.py`: `TurnScheduler` keeps exactly one active user; a retrying user does not starve others
-- [ ] 3.4 RED `tests/test_sealed_box.py`: interop fixture sealed by libsodium-wrappers opens with PyNaCl; wrong/unknown `key_id` raises `CredentialsUnavailable`
-- [ ] 3.5 RED `tests/test_log_redaction.py`: `caplog` has no codes/usernames/emails after `RedactingFilter`
-- [ ] 3.6 Add `UserDirectory`, `CredentialOpener` protocols to `src/upv_auto/ports.py`
-- [ ] 3.7 Create `src/upv_auto/app/turns.py`: `TurnScheduler`, `TurnTakingClock`, `BufferedNotifier`
-- [ ] 3.8 Create `src/upv_auto/app/run_batch.py`: roster loop, per-user `dataclasses.replace(config, ...)`, try/record per user
-- [ ] 3.9 Create `src/upv_auto/adapters/supabase_rest.py`: httpx PostgREST client, service-role key
-- [ ] 3.10 Create `src/upv_auto/adapters/sealed_box.py`: PyNaCl opener + `seal-keygen` command
-- [ ] 3.11 Create `src/upv_auto/adapters/log_redaction.py`: `RedactingFilter`, `httpx` logger at WARNING
-- [ ] 3.12 Modify `src/upv_auto/__main__.py`: add `book-all [--now]`, `seal-keygen` subcommands
-- [ ] 3.13 Modify `pyproject.toml`: extra `multiuser = ["pynacl>=1.5"]`
-- [ ] 3.14 Modify `.github/workflows/book.yml`: `book-all` mode, Supabase/seal secrets, no artifact upload, fixed `run-name`
-- [ ] 3.15 Test: `.venv\Scripts\python.exe -m pytest -q`
+- [x] 3.1 RED `tests/test_run_batch.py`: user B login fails, A and C still processed and recorded
+- [x] 3.2 RED `tests/test_run_batch.py`: empty queue produces no result row and no email
+- [x] 3.3 RED `tests/test_turns.py`: `TurnScheduler` keeps exactly one active user; a retrying user does not starve others
+- [x] 3.4 RED `tests/test_sealed_box.py`: interop fixture sealed by libsodium-wrappers opens with PyNaCl; wrong/unknown `key_id` raises `CredentialsUnavailable`
+- [x] 3.5 RED `tests/test_log_redaction.py`: `caplog` has no codes/usernames/emails after `RedactingFilter`
+- [x] 3.6 Add `UserDirectory`, `CredentialOpener` protocols to `src/upv_auto/ports.py`
+- [x] 3.7 Create `src/upv_auto/app/turns.py`: `TurnScheduler`, `TurnTakingClock`, `BufferedNotifier`
+- [x] 3.8 Create `src/upv_auto/app/run_batch.py`: roster loop, per-user `dataclasses.replace(config, ...)`, try/record per user
+- [x] 3.9 Create `src/upv_auto/adapters/supabase_rest.py`: httpx PostgREST client, service-role key
+- [x] 3.10 Create `src/upv_auto/adapters/sealed_box.py`: PyNaCl opener + `seal-keygen` command
+- [x] 3.11 Create `src/upv_auto/adapters/log_redaction.py`: `RedactingFilter`, `httpx` logger at WARNING
+- [x] 3.12 Modify `src/upv_auto/__main__.py`: add `book-all [--now]`, `seal-keygen` subcommands
+- [x] 3.13 Modify `pyproject.toml`: extra `multiuser = ["pynacl>=1.5"]`
+- [x] 3.14 Modify `.github/workflows/book.yml`: `book-all` mode, Supabase/seal secrets, no artifact upload, fixed `run-name`
+- [x] 3.15 Test: `.venv\Scripts\python.exe -m pytest -q`
 
 ## Phase 4: Refresh — Edge Rate-Limit + Realtime (PR 4)
 

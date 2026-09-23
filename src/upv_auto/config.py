@@ -108,7 +108,10 @@ def _require_key(raw: dict, key: str) -> object:
     return raw[key]
 
 
-def _parse_booking(booking_raw: dict) -> BookingTarget:
+def parse_booking_dict(booking_raw: dict) -> BookingTarget:
+    """Parse `{"group_code": ..., "alternatives": [...]}, matching the JSON shape
+    both YAML (after `yaml.safe_load`) and Supabase's `booking_queue.bookings`
+    jsonb column use (see `adapters.supabase_rest`)."""
     codes = [str(_require_key(booking_raw, "group_code"))]
     codes += [str(code) for code in booking_raw.get("alternatives") or []]
     return BookingTarget(options=tuple(Slot(group_code=validate_group_code(c)) for c in codes))
@@ -130,8 +133,16 @@ def validate_group_code(group_code: str) -> str:
     return group_code
 
 
-def load_config(path: str | Path = "config.yaml") -> AppConfig:
-    """Load YAML config from `path` and merge in secrets from the environment."""
+def load_config(path: str | Path = "config.yaml", *, require_upv_credentials: bool = True) -> AppConfig:
+    """Load YAML config from `path` and merge in secrets from the environment.
+
+    `require_upv_credentials=False` skips requiring `UPV_USERNAME`/`UPV_PASSWORD`
+    (an empty placeholder `Credentials` is returned instead): the multi-user
+    `book-all` command has no single shared UPV login — each user's real
+    credentials are unsealed per-user and substituted in with
+    `dataclasses.replace` (see `app.run_batch`), and by design those two
+    secrets are eventually deleted once migration is complete.
+    """
     config_path = Path(path)
     if not config_path.is_file():
         raise ConfigError(f"Config file not found: {config_path}")
@@ -162,12 +173,15 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         name=str(_require_key(activity_raw, "name")),
     )
     # An empty queue is allowed: a week you are not booking anything.
-    bookings = [_parse_booking(b) for b in bookings_raw or []]
+    bookings = [parse_booking_dict(b) for b in bookings_raw or []]
 
-    credentials = Credentials(
-        username=_require_env("UPV_USERNAME"),
-        password=_require_env("UPV_PASSWORD"),
-    )
+    if require_upv_credentials:
+        credentials = Credentials(
+            username=_require_env("UPV_USERNAME"),
+            password=_require_env("UPV_PASSWORD"),
+        )
+    else:
+        credentials = Credentials(username="", password="")
 
     smtp_username = os.environ.get("SMTP_USERNAME")
     smtp_app_password = os.environ.get("SMTP_APP_PASSWORD")

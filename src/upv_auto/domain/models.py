@@ -115,3 +115,28 @@ class BookingWindow:
     opens_at: datetime
     closes_at: datetime
     retry_interval_seconds: float
+
+
+@dataclass(frozen=True)
+class UserRecord:
+    """One roster entry for the multi-user batch: a user with a non-empty queue.
+
+    `sealed_credentials`/`key_id` are opened via `CredentialOpener` just
+    before that user's turn, never eagerly for the whole roster at once.
+    """
+
+    user_id: str
+    email: str
+    sealed_credentials: str
+    key_id: str
+    bookings: list[BookingTarget]
+
+
+@dataclass(frozen=True)
+class RefreshJob:
+    """A claimed schedule-refresh request: enough to unseal and fetch one user's schedule."""
+
+    request_id: str
+    user_id: str
+    sealed_credentials: str
+    key_id: str

@@ -97,6 +97,17 @@ def test_load_config_uses_explicit_email_recipient(tmp_path, monkeypatch):
     assert config.email.recipient == "other@upv.es"
 
 
+def test_load_config_require_upv_credentials_false_skips_the_env_requirement(tmp_path, monkeypatch):
+    """`book-all` has no single shared UPV login (see `app.run_batch`)."""
+    config_path = write_config(tmp_path)
+    monkeypatch.delenv("UPV_USERNAME", raising=False)
+    monkeypatch.delenv("UPV_PASSWORD", raising=False)
+
+    config = load_config(config_path, require_upv_credentials=False)
+
+    assert config.credentials == Credentials(username="", password="")
+
+
 def test_load_config_missing_required_env_raises_clear_error(tmp_path, monkeypatch):
     config_path = write_config(tmp_path)
     monkeypatch.delenv("UPV_USERNAME", raising=False)

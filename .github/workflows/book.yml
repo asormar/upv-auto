@@ -1,5 +1,11 @@
 name: Book UPV slot
 
+# Fixed for `book-all` (platform-operations spec: "Public Log Hygiene" /
+# design.md's log hygiene #5) so the run title never carries per-user data;
+# other modes keep a short, input-derived name (never includes `groups`,
+# which can only ever hold group codes, not identities).
+run-name: ${{ inputs.mode == 'book-all' && 'Multi-user booking batch' || inputs.mode }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -8,11 +14,12 @@ on:
         type: choice
         options:
           - book
+          - book-all
           - check-login
           - list-groups
         default: book
       now:
-        description: "book only: start immediately instead of waiting for the window (testing)"
+        description: "book/book-all only: start immediately instead of waiting for the window (testing)"
         type: boolean
         default: false
       groups:
@@ -40,7 +47,9 @@ jobs:
           cache: pip
 
       - name: Install package
-        run: pip install .
+        # multiuser (PyNaCl) is small enough to always install; every mode
+        # shares this one workflow, and book-all needs it to unseal credentials.
+        run: pip install ".[multiuser]"
 
       - name: Cache Playwright browsers
         id: playwright-cache
@@ -59,11 +68,20 @@ jobs:
 
       - name: Run
         env:
+          # book/check-login/list-groups only. book-all deletes these two
+          # once migration is verified (design.md's "Migration / Rollout");
+          # load_config(require_upv_credentials=False) tolerates them unset.
           UPV_USERNAME: ${{ secrets.UPV_USERNAME }}
           UPV_PASSWORD: ${{ secrets.UPV_PASSWORD }}
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_APP_PASSWORD: ${{ secrets.SMTP_APP_PASSWORD }}
+          # book only: the owner's own recipient. book-all emails each user
+          # at their own account email instead (from `batch_roster()`).
           NOTIFY_EMAIL_TO: ${{ secrets.NOTIFY_EMAIL_TO }}
+          # book-all only.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SEAL_PRIVATE_KEYS: ${{ secrets.SEAL_PRIVATE_KEYS }}
           # Inputs go through env vars, never interpolated into the script (avoids injection).
           MODE: ${{ inputs.mode }}
           NOW: ${{ inputs.now }}
@@ -73,11 +91,15 @@ jobs:
           if [ "$MODE" = "book" ]; then
             [ "$NOW" = "true" ] && args+=(--now)
             for code in $GROUPS; do args+=(--group "$code"); done
+          elif [ "$MODE" = "book-all" ]; then
+            [ "$NOW" = "true" ] && args+=(--now)
           fi
           python -m upv_auto "${args[@]}"
 
       - name: Upload debug artifacts
-        if: failure()
+        # book-all uploads nothing: CAS screenshots show usernames, and one
+        # run now covers every user (design.md's log hygiene #5).
+        if: failure() && inputs.mode != 'book-all'
         uses: actions/upload-artifact@v4
         with:
           name: artifacts

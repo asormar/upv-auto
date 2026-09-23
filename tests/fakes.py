@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timedelta
 
 from upv_auto.domain.models import BookingOutcome, GroupAvailability, GroupState, Session, TableSnapshot
@@ -10,18 +11,25 @@ _STATE_BY_NAME = {state.name: state for state in GroupState}
 
 
 class FakeClock:
-    """A clock whose `sleep` advances virtual time instantly."""
+    """A clock whose `sleep` advances virtual time instantly.
+
+    Thread-safe (a lock guards `_now` and `sleep_calls`) so it can double as
+    the shared clock behind several `TurnTakingClock`s in multi-user tests.
+    """
 
     def __init__(self, start: datetime) -> None:
         self._now = start
+        self._lock = threading.Lock()
         self.sleep_calls: list[float] = []
 
     def now(self) -> datetime:
-        return self._now
+        with self._lock:
+            return self._now
 
     def sleep(self, seconds: float) -> None:
-        self.sleep_calls.append(seconds)
-        self._now += timedelta(seconds=seconds)
+        with self._lock:
+            self.sleep_calls.append(seconds)
+            self._now += timedelta(seconds=seconds)
 
 
 class FakeAuthenticator:
