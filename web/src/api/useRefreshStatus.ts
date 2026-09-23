@@ -103,10 +103,20 @@ export function useRefreshStatus(onRefreshed: () => void): RefreshStatus {
       // error — the cached schedule is served as-is either way.
       if (!signInFiredRef.current) {
         signInFiredRef.current = true;
-        void requestRefresh("signin").catch(() => {
-          // Offline or the Edge Function is unreachable: keep the cached
-          // schedule (schedule-refresh spec's "Cached Schedule Served").
-        });
+        // Optimistic: the loading state starts with the click-equivalent
+        // (signing in), not when the Edge Function answers a second later.
+        setPending(true);
+        void requestRefresh("signin")
+          .then(({ dispatched }) => {
+            // Throttled sign-in: no run will ever report back, so stop
+            // showing a load that is not happening.
+            if (!dispatched) setPending(false);
+          })
+          .catch(() => {
+            // Offline or the Edge Function is unreachable: keep the cached
+            // schedule (schedule-refresh spec's "Cached Schedule Served").
+            setPending(false);
+          });
       }
     });
 
@@ -119,10 +129,14 @@ export function useRefreshStatus(onRefreshed: () => void): RefreshStatus {
 
   const triggerManualRefresh = useCallback(async () => {
     setMessage(null);
+    // Feedback belongs to the click, not to the round trip: invoking the
+    // Edge Function (which calls GitHub) takes a noticeable moment, and a
+    // button that does nothing meanwhile reads as broken.
+    setPending(true);
     try {
       await requestRefresh("manual");
-      setPending(true);
     } catch (cause) {
+      setPending(false);
       setMessage(cause instanceof Error ? cause.message : String(cause));
     }
   }, []);

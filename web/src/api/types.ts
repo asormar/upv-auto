@@ -74,7 +74,10 @@ export interface Backend {
   getConfig(): Promise<Config>;
   getSchedule(refresh?: boolean): Promise<Schedule>;
   putBookings(bookings: Booking[]): Promise<{ bookings: Booking[] }>;
-  requestRefresh(trigger: RefreshTrigger): Promise<void>;
+  /** Resolves to whether a refresh run was actually dispatched: a sign-in
+   * inside the throttle window is accepted but dispatches nothing, and the
+   * loading state must not linger for a run that will never happen. */
+  requestRefresh(trigger: RefreshTrigger): Promise<{ dispatched: boolean }>;
   saveCredentials(username: string, password: string): Promise<void>;
   deleteAccount(): Promise<void>;
 }

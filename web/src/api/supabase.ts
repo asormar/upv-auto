@@ -124,13 +124,16 @@ async function readErrorCode(error: unknown): Promise<string | null> {
   }
 }
 
-export async function requestRefresh(trigger: RefreshTrigger): Promise<void> {
-  const { error } = await supabase().functions.invoke("refresh", { body: { trigger } });
+export async function requestRefresh(trigger: RefreshTrigger): Promise<{ dispatched: boolean }> {
+  const { data, error } = await supabase().functions.invoke("refresh", { body: { trigger } });
   if (error) {
     const code = await readErrorCode(error);
     const message = (code && KNOWN_REFRESH_ERRORS[code]) ?? `No se pudo actualizar el horario: ${error.message}`;
     throw new Error(message);
   }
+  // A throttled sign-in answers 200 with `dispatched: false`; anything else
+  // that reached here did dispatch a run.
+  return { dispatched: (data as { dispatched?: boolean } | null)?.dispatched !== false };
 }
 
 /** One row of `refresh_requests`, as delivered by Realtime (schedule-refresh

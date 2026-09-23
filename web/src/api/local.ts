@@ -35,7 +35,7 @@ export const putBookings = (bookings: Booking[]) =>
 // do. `AuthGate` never renders their UI under `VITE_BACKEND=local` (it skips
 // the gate entirely), so these only guard against an unexpected direct call.
 
-export async function requestRefresh(_trigger: RefreshTrigger): Promise<void> {
+export async function requestRefresh(_trigger: RefreshTrigger): Promise<{ dispatched: boolean }> {
   throw new Error("El refresco desde la nube no está disponible en modo local.");
 }
 
