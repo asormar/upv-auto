@@ -259,3 +259,50 @@ Total authored: **~562 additions + ~33 deletions ≈ 595 changed lines** (git-di
 - Current work unit: Unit 4 — Refresh: Edge rate-limit + Realtime
 - Boundary: starts from the Phase 1 `refresh/index.ts` skeleton (auth-only, `501 not_implemented`) and no `refresh.yml`/`refresh_user.py`/`useRefreshStatus.ts`; ends with the full sign-in-throttled + manual-rate-limited refresh path wired end to end (Edge Function -> SQL `claim_refresh` -> `workflow_dispatch` -> `refresh.yml` -> `refresh_user.py` -> `schedules`/`refresh_requests` -> Realtime -> `useRefreshStatus` -> `App.tsx`'s existing loading UI) — not yet runnable end to end without a live Supabase project, a deployed Edge Function, and the two new GitHub secrets (`GITHUB_REPO`, `GITHUB_DISPATCH_TOKEN`)
 - Estimated review budget impact: ~595 authored lines, above the 400-line default and above this slice's own ~350-450 forecast; recommend `size:exception`, consistent with PR 1-3 (the smallest overrun of the four so far)
+
+## Work Unit 5 — Pages Deploy + Vite `base` (PR 5)
+
+Status: complete (all Phase 5 tasks). Chain strategy `stacked-to-main`, PR 5 of 6.
+
+### Completed Tasks
+- [x] 5.1 `web/vite.config.ts` — `base: process.env.VITE_BASE_PATH ?? "/"`, with a comment noting local dev/`serve --demo` never set `VITE_BASE_PATH` so the `/api` proxy is unaffected
+- [x] 5.2 `.github/workflows/pages.yml` — official `actions/configure-pages` -> build -> `actions/upload-pages-artifact` -> `actions/deploy-pages` pipeline, minimal `contents: read` / `pages: write` / `id-token: write` permissions, no `workflow_dispatch` inputs (nothing to interpolate)
+- [x] 5.3 `web/src/scheduleView.ts` — behavior-identical port of `adapters/web/schedule_view.py`'s `build_days`/`count_queued`/`count_enrolled_now`; wired into `web/src/api/supabase.ts`'s `getSchedule()`, replacing the `days: []` stub left by Work Unit 2
+- [x] 5.4 Verified `VITE_BACKEND=local` still serves under `/` (dev-server smoke test, see Work Unit Evidence) — `serve --demo`'s `/api` proxy path is unaffected by the Pages `base` change
+- [x] 5.5 `npm run build --prefix web` tested both with `VITE_BASE_PATH=/upv-auto/` set (assets resolve under `/upv-auto/assets/...`) and unset (assets resolve under `/assets/...`, matching pre-Phase-5 behavior)
+
+### Files Changed
+| File | Action | Lines (+/-) |
+|------|--------|-------------|
+| `web/vite.config.ts` | Modified | +6/-0 |
+| `.github/workflows/pages.yml` | Created | +72/-0 |
+| `web/src/scheduleView.ts` | Created | +112/-0 |
+| `web/src/api/supabase.ts` | Modified | +3/-10 (import `buildDays`/`countEnrolledNow`, drop the local `countEnrolledThisWeek` and the `days: []` stub) |
+
+Total authored: **193 additions + 10 deletions = 203 changed lines** (git-diff-verified for the two modified files: `web/vite.config.ts` +6/-0, `web/src/api/supabase.ts` +3/-10; the two new files add 72+112=184 lines), well within the 400-line default. No `size:exception` needed for this slice, unlike PR 1-4.
+
+### Work Unit Evidence
+| Evidence | Value |
+|---|---|
+| Focused test command and exact result | `npm run build --prefix web` (`tsc -b && vite build`) — passes, 105 modules, no type errors, run three times: once with `VITE_BASE_PATH` unset (baseline), once with `MSYS_NO_PATHCONV=1 VITE_BASE_PATH=/upv-auto/` (see Notes on the Git-Bash artifact), once more unset afterward to confirm the default still holds. `.venv\Scripts\python.exe -m pytest -q` — 117 passed, 0 failed (no Python files touched in this unit; confirms no regression) |
+| Runtime harness command/scenario and exact result | No live GitHub Pages deployment to visit (OWNER 0.4 — enabling Pages — is out of agent scope), so `pages.yml` itself was not run by a real workflow dispatch; validated instead by (1) `python -c "import yaml; yaml.safe_load(open('.github/workflows/pages.yml'))"` confirming well-formed YAML, and (2) a dev-server smoke test: `VITE_BACKEND=local npx vite --port 5187 --strictPort` (no `VITE_BASE_PATH`) served `/`, `/src/main.tsx`, and `/src/scheduleView.ts` all at HTTP 200 under `/` (unchanged from pre-Phase-5), and `/api/config` returned HTTP 500 (connection attempted to the unstarted FastAPI backend at `127.0.0.1:8000`, confirming the proxy itself is still wired, not a routing regression) — this is task 5.4's verification. Separately, `dist/index.html` was inspected after each build: with `VITE_BASE_PATH=/upv-auto/` its `<script src>`/`<link href>` read `/upv-auto/assets/...`; with it unset they read `/assets/...` |
+| Rollback boundary | Delete `.github/workflows/pages.yml`, `web/src/scheduleView.ts`. Revert `web/vite.config.ts` (drop the `base` line) and `web/src/api/supabase.ts` (restore the local `countEnrolledThisWeek` and the `days: []` stub, drop the `scheduleView` import). No file from Work Unit 1-4 was touched |
+
+### Deviations from Design
+None — `vite.config.ts`'s `base` line matches design.md's File Changes table verbatim, `scheduleView.ts` is a line-for-line-equivalent port of `schedule_view.py` (same day/time ordering rules, same queue-position/alternatives-don't-add rule), and `pages.yml` uses the three official Pages actions design.md's Phase 5 goal implies without design.md prescribing exact step names.
+
+### Notes / Judgment Calls
+- `pages.yml`'s build step reads `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`/`VITE_SEAL_PUBLIC_KEY`/`VITE_SEAL_KEY_ID` from `secrets.*`, not `vars.*`, even though these four values are public-by-design (an RLS-scoped anon key and a sealed-box public key/id) — kept as `secrets` for consistency with Phase 0's own task list (OWNER 0.3 already names these four as "GitHub secrets" alongside `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`), so the owner sets them in exactly one place GitHub calls "Secrets", not split across Secrets and Variables.
+- `VITE_BASE_PATH` is derived from `actions/configure-pages`'s `base_path` output (`steps.pages.outputs.base_path`), not hardcoded as `/upv-auto/` or computed from `github.repository`. `configure-pages` is the GitHub-maintained action that already knows the project's Pages path (org vs. project site, custom domain or not); depending on its output keeps `pages.yml` correct even if the repository is ever renamed or transferred, which the session prompt's `/upv-auto/` example is a *result* of, not a literal string to hardcode.
+- `pages.yml` triggers on `push: branches: [main], paths: [web/**, .github/workflows/pages.yml]` plus `workflow_dispatch`. Design.md doesn't specify a trigger; a path-filtered push to `main` matches how a static frontend is conventionally redeployed (only when the frontend actually changed) without adding a new manual step to the Phase 6 migration checklist, and `workflow_dispatch` covers a manual redeploy (e.g. after rotating a `VITE_SEAL_*` secret with no `web/` code change).
+- The `"base" option should start with a slash` Vite warning seen during local verification (and a mangled `/Program Files/Git/upv-auto/` asset path) is a Git-Bash/MSYS artifact: MSYS auto-converts any argument or env var value that looks like a POSIX absolute path (`/upv-auto/`) into a Windows path before Node ever sees it. This never happens on the Linux `ubuntu-latest` GitHub Actions runner `pages.yml` actually runs on, and was confirmed non-reproducing locally too with `MSYS_NO_PATHCONV=1` (see Work Unit Evidence) — `dist/index.html` then correctly read `/upv-auto/assets/...`. Documented here so a future contributor testing this on Windows Git Bash doesn't mistake it for a code bug.
+- `scheduleView.ts` also ports `count_queued`/`count_enrolled_now` (not just `build_days`), even though task 5.3 names only `build_days` and `getSchedule()` already had inline equivalents (`config.bookings.length`, a local `countEnrolledThisWeek`) since Work Unit 2. Moved both into the new file and imported them, rather than leaving three ad hoc functions split across two files: `scheduleView.ts` is now the one module mirroring `schedule_view.py`'s full surface, which is what "port `build_days` to TypeScript" means in context (design.md's Schema section: "`build_days` is ported to TypeScript", singular file, not singular function) and matches the design's own File Changes table entry for `scheduleView.ts`.
+
+### Remaining Tasks (later work unit, not this agent's scope)
+- [ ] Phase 6 (PR 6): Migration + docs — README setup/rotation/migration/local-dev section (including the two Phase 4 Edge Function secrets `GITHUB_REPO`/`GITHUB_DISPATCH_TOKEN` still undocumented), plus every OWNER-only task across all six phases
+
+### Workload / PR Boundary
+- Mode: stacked PR slice (`stacked-to-main`), PR 5 of 6
+- Current work unit: Unit 5 — Pages deploy + Vite `base`
+- Boundary: starts from an unconfigured `base` (Pages-incompatible asset URLs) and no deploy workflow; ends with a Pages-ready build (`base` driven by `VITE_BASE_PATH`, defaulting to `/` so local dev is unaffected), a `pages.yml` that builds and deploys via the official actions, and a populated (no longer `days: []`) Supabase-backed agenda view — not yet deployed live (OWNER 0.4, enabling Pages in repo settings, is out of agent scope)
+- Estimated review budget impact: ~203 authored lines, the first slice of this change to land under the 400-line default; no `size:exception` needed
