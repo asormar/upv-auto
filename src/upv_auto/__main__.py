@@ -5,6 +5,7 @@ Usage:
     python -m upv_auto list-groups [--config PATH]
     python -m upv_auto book [--config PATH] [--now]
     python -m upv_auto book-all [--config PATH] [--now]
+    python -m upv_auto refresh --request-id REQUEST_ID [--config PATH]
     python -m upv_auto seal-keygen [--key-id KEY_ID]
     python -m upv_auto serve [--config PATH] [--host HOST] [--port PORT]
 
@@ -103,6 +104,17 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--now",
         action="store_true",
         help="Skip waiting for the window to open (for testing).",
+    )
+
+    refresh_parser = subparsers.add_parser(
+        "refresh",
+        help="Fetch and cache one user's schedule for an already-claimed refresh request.",
+    )
+    refresh_parser.add_argument("--config", default="config.yaml")
+    refresh_parser.add_argument(
+        "--request-id",
+        required=True,
+        help="Opaque refresh_requests.id (UUID), set only by the refresh Edge Function.",
     )
 
     seal_keygen_parser = subparsers.add_parser(
@@ -260,6 +272,73 @@ def _book_all(args: argparse.Namespace) -> int:
         )
 
 
+def _refresh(args: argparse.Namespace) -> int:
+    """One user's schedule refresh, dispatched by `refresh.yml` with only an
+    opaque `request_id` input (design.md's "Refresh dispatch" decision).
+    Validates the input is a UUID before it touches anything else — the
+    Edge Function and the workflow's own bash step already do the same
+    check, but this CLI must never trust an input that reaches it only
+    through a GitHub Actions `workflow_dispatch` field (threat matrix:
+    workflow-input injection). Imported lazily, mirroring `_book_all`, so
+    the single-user CLI still works without the 'multiuser' extra installed.
+    """
+    try:
+        request_id = str(uuid.UUID(args.request_id))
+    except ValueError:
+        logger.error("Invalid --request-id: expected a UUID")
+        return 1
+
+    try:
+        from upv_auto.adapters.log_redaction import RedactingFilter, configure_log_hygiene, mask_for_actions
+        from upv_auto.adapters.sealed_box import SealedBoxOpener
+        from upv_auto.adapters.supabase_rest import SupabaseRestUserDirectory
+        from upv_auto.app.refresh_user import refresh_user
+    except ImportError:
+        logger.error("refresh needs the extra dependencies: pip install -e \".[multiuser]\"")
+        return 1
+
+    try:
+        config = load_config(args.config, require_upv_credentials=False)
+        supabase_url = _require_env_var("SUPABASE_URL")
+        service_role_key = _require_env_var("SUPABASE_SERVICE_ROLE_KEY")
+        private_keys = json.loads(_require_env_var("SEAL_PRIVATE_KEYS"))
+    except ConfigError as exc:
+        logger.error(str(exc))
+        return 1
+    except json.JSONDecodeError as exc:
+        logger.error("SEAL_PRIVATE_KEYS is not valid JSON: %s", exc)
+        return 1
+
+    redacting_filter = RedactingFilter()
+    configure_log_hygiene(redacting_filter)
+
+    def on_credentials_opened(credentials: Credentials) -> None:
+        redacting_filter.register(credentials.username, credentials.password)
+        mask_for_actions(credentials.username, credentials.password)
+
+    clock = SystemClock(timezone=config.timezone)
+    # A refresh has no user-facing email step; success/failure is reported
+    # through `finish_request`, read by the frontend's `useRefreshStatus.ts`.
+    notifier = ConsoleNotifier()
+
+    with SupabaseRestUserDirectory(supabase_url, service_role_key) as directory:
+        with HttpxActivityTableClient(activity=config.activity) as table_client:
+            authenticator = PlaywrightCasAuthenticator(entry_url=config.upv.entry_url)
+            verifier = HttpxSessionVerifier(session_check_url=config.upv.session_check_url)
+            return refresh_user(
+                request_id,
+                config,
+                directory,
+                SealedBoxOpener(private_keys),
+                authenticator,
+                verifier,
+                notifier,
+                clock,
+                table_client,
+                on_credentials_opened=on_credentials_opened,
+            )
+
+
 def _serve(args: argparse.Namespace) -> int:
     """Run the web adapter. Imported lazily: the CLI must work without FastAPI."""
     try:
@@ -284,16 +363,19 @@ def main(argv: list[str] | None = None) -> int:
     load_env_file()
 
     # The server reports config problems over HTTP, so it starts before the
-    # config (and its required secrets) are loaded. `seal-keygen` and
-    # `book-all` load config differently from the single-user commands below
-    # (no UPV_USERNAME/UPV_PASSWORD; book-all needs Supabase/seal secrets
-    # instead), so they are handled in their own functions.
+    # config (and its required secrets) are loaded. `seal-keygen`,
+    # `book-all`, and `refresh` load config differently from the single-user
+    # commands below (no UPV_USERNAME/UPV_PASSWORD; book-all/refresh need
+    # Supabase/seal secrets instead), so they are handled in their own
+    # functions.
     if args.command == "serve":
         return _serve(args)
     if args.command == "seal-keygen":
         return _seal_keygen(args)
     if args.command == "book-all":
         return _book_all(args)
+    if args.command == "refresh":
+        return _refresh(args)
 
     try:
         config = load_config(args.config)

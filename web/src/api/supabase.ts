@@ -4,6 +4,7 @@
 // `supabase/migrations/0001_multi_user.sql`.
 
 import { createClient, type SupabaseClient, type Session } from "@supabase/supabase-js";
+import { buildDays, countEnrolledNow } from "../scheduleView";
 import type { Backend, Booking, Config, RawGroups, RefreshTrigger, Schedule } from "./types";
 
 // `createClient` validates its URL/key eagerly (throws if either is empty),
@@ -99,9 +100,86 @@ export async function deleteAccount(): Promise<void> {
   await supabase().auth.signOut();
 }
 
+// Spanish copy for the `refresh` Edge Function's known `{ error: "<code>" }`
+// bodies (schedule-refresh spec: rate limit / throttle messages must reach
+// the user in Spanish). `readErrorCode` reads that body from the SDK's
+// error context; unrecognized codes fall back to a generic message.
+const KNOWN_REFRESH_ERRORS: Record<string, string> = {
+  rate_limited: "Has alcanzado el límite de actualizaciones manuales. Inténtalo de nuevo más tarde.",
+  unauthorized: "Tu sesión ha caducado. Vuelve a iniciar sesión.",
+  dispatch_failed: "No se pudo iniciar la actualización. Inténtalo de nuevo en unos minutos.",
+  dispatch_not_configured: "La actualización no está disponible ahora mismo.",
+  claim_failed: "No se pudo procesar la solicitud de actualización.",
+  invalid_trigger: "No se pudo procesar la solicitud de actualización.",
+};
+
+async function readErrorCode(error: unknown): Promise<string | null> {
+  const context = (error as { context?: { json?: () => Promise<unknown> } } | null)?.context;
+  if (!context?.json) return null;
+  try {
+    const body = (await context.json()) as { error?: unknown };
+    return typeof body.error === "string" ? body.error : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function requestRefresh(trigger: RefreshTrigger): Promise<void> {
   const { error } = await supabase().functions.invoke("refresh", { body: { trigger } });
+  if (error) {
+    const code = await readErrorCode(error);
+    const message = (code && KNOWN_REFRESH_ERRORS[code]) ?? `No se pudo actualizar el horario: ${error.message}`;
+    throw new Error(message);
+  }
+}
+
+/** One row of `refresh_requests`, as delivered by Realtime (schedule-refresh
+ * spec). Mirrors the table in `supabase/migrations/0001_multi_user.sql`. */
+export interface RefreshRequestRow {
+  id: string;
+  status: "pending" | "done" | "failed";
+  error_code: string | null;
+  trigger: RefreshTrigger;
+}
+
+/**
+ * Realtime feed for the signed-in user's own `refresh_requests` rows
+ * (schedule-refresh spec's "Visible Loading State During Pending Refresh").
+ * RLS already scopes every row to `auth.uid()` server-side; the `user_id`
+ * filter here only narrows which changes wake this callback. Returns an
+ * unsubscribe function, mirroring `onAuthStateChange`'s own shape.
+ */
+export function subscribeToRefreshRequests(
+  userId: string,
+  onChange: (row: RefreshRequestRow) => void,
+): () => void {
+  const channel = supabase()
+    .channel(`refresh_requests:${userId}`)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "refresh_requests", filter: `user_id=eq.${userId}` },
+      (payload) => onChange(payload.new as RefreshRequestRow),
+    )
+    .subscribe();
+
+  return () => {
+    void supabase().removeChannel(channel);
+  };
+}
+
+/** The current user's most recent `refresh_requests` row, if any — used to
+ * seed `useRefreshStatus`'s state for a refresh that was already pending
+ * before the page loaded (Realtime only reports *changes* from the moment
+ * of subscription). */
+export async function getLatestRefreshRequest(): Promise<RefreshRequestRow | null> {
+  const { data, error } = await supabase()
+    .from("refresh_requests")
+    .select("id, status, error_code, trigger")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<RefreshRequestRow>();
   if (error) throw new Error(error.message);
+  return data;
 }
 
 // ---------- queue + schedule ----------
@@ -177,16 +255,12 @@ export async function putBookings(bookings: Booking[]): Promise<{ bookings: Book
   return { bookings: data.bookings };
 }
 
-export async function getSchedule(refresh = false): Promise<Schedule> {
-  if (refresh) {
-    // Best-effort: kicks off the Edge Function's `claim_refresh` ->
-    // `workflow_dispatch`. The result lands 1-2 min later via
-    // `refresh_requests`; wiring that wait and the loading state is
-    // `useRefreshStatus.ts` (Phase 4). For now this call surfaces rate-limit
-    // errors immediately and otherwise returns the still-cached schedule.
-    await requestRefresh("manual");
-  }
-
+export async function getSchedule(_refresh = false): Promise<Schedule> {
+  // `_refresh` is part of the shared `Backend` interface (the local
+  // FastAPI backend fetches synchronously with `?refresh=true`), but this
+  // backend's refresh is Realtime-driven and 1-2 min long: triggering and
+  // awaiting it belongs to `useRefreshStatus.ts` (schedule-refresh spec),
+  // not to a schedule read. This always returns the current cached row.
   const [{ data: scheduleRow, error: scheduleError }, config] = await Promise.all([
     supabase()
       .from("schedules")
@@ -204,18 +278,10 @@ export async function getSchedule(refresh = false): Promise<Schedule> {
     limits: {
       ...config.limits,
       queued: config.bookings.length,
-      enrolled_this_week: countEnrolledThisWeek(groups),
+      enrolled_this_week: countEnrolledNow(groups),
     },
-    // Phase 5 (task 5.3) ports `adapters/web/schedule_view.py`'s `build_days`
-    // to `web/src/scheduleView.ts`; until then there is no cached-groups ->
-    // day-view conversion here, so the agenda stays empty for the Supabase
-    // backend (the queue panel and credential flow above it work today).
-    days: [],
+    days: buildDays(groups, config.bookings),
   };
-}
-
-function countEnrolledThisWeek(groups: RawGroups): number {
-  return Object.values(groups).filter((group) => group.state === "ENROLLED").length;
 }
 
 // Structural check only: keeps this module's exports in sync with `Backend`.
