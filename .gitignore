@@ -13,3 +13,4 @@ storage_state*.json
 .claude/
 skills-lock.json
 .codegraph/
+supabase/.temp/

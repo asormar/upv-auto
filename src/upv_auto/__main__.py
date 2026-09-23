@@ -322,6 +322,10 @@ def _refresh(args: argparse.Namespace) -> int:
     notifier = ConsoleNotifier()
 
     with SupabaseRestUserDirectory(supabase_url, service_role_key) as directory:
+        # Same sync as `book-all`: without it the frontend falls back to an
+        # empty activity (an "Campus" header with no name) until the first
+        # Saturday batch ever runs.
+        directory.upsert_settings(_settings_payload(config))
         with HttpxActivityTableClient(activity=config.activity) as table_client:
             authenticator = PlaywrightCasAuthenticator(entry_url=config.upv.entry_url)
             verifier = HttpxSessionVerifier(session_check_url=config.upv.session_check_url)
