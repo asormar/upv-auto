@@ -61,9 +61,17 @@ def refresh_user(
     GitHub Actions `::add-mask::` lines without this use case importing any
     adapter.
     """
-    job = directory.claim_request(request_id)
+    try:
+        job = directory.claim_request(request_id)
+    except CredentialsUnavailable:
+        # Signed up, no UPV credentials saved yet (the sign-in refresh can
+        # reach this before the credentials form is submitted). Close the
+        # request so the web stops showing a pending refresh.
+        logger.warning("No stored credentials for this refresh request")
+        directory.finish_request(request_id, ok=False, error_code="credentials_unavailable")
+        return 1
     if job is None:
-        logger.error("Refresh request not found, already finished, or missing credentials")
+        logger.error("Refresh request not found or already finished")
         return 1
 
     try:

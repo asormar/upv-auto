@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 import httpx
 
 from upv_auto.config import parse_booking_dict
+from upv_auto.domain.errors import CredentialsUnavailable
 from upv_auto.domain.models import GroupAvailability, RefreshJob, UserRecord
 
 logger = logging.getLogger(__name__)
@@ -100,7 +101,11 @@ class SupabaseRestUserDirectory:
         cred_response.raise_for_status()
         cred_rows = cred_response.json()
         if not cred_rows:
-            return None
+            # Signed up but has not saved UPV credentials yet: raising here
+            # (instead of returning None) lets the use case close the request
+            # instead of leaving it `pending` until the 15-minute expiry,
+            # which the web reads as a refresh that never ends.
+            raise CredentialsUnavailable("This user has no stored UPV credentials")
 
         return RefreshJob(
             request_id=request_rows[0]["id"],

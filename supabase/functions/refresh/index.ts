@@ -17,8 +17,12 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 
-interface RefreshRequestRow {
+interface ClaimResult {
   id: string;
+  /** False when an earlier run is already processing this request: the
+   * caller keeps its pending state, but a second dispatch would race that
+   * run and fail (migration 0002). */
+  dispatch: boolean;
 }
 
 Deno.serve(async (req) => {
@@ -65,12 +69,20 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "invalid_trigger" }, 400, origin);
   }
 
-  const { data: claimed, error: claimError } = await supabase
-    .rpc("claim_refresh", { p_trigger: trigger })
-    .single<RefreshRequestRow>();
+  const { data: claimRows, error: claimError } = await supabase.rpc("claim_refresh", {
+    p_trigger: trigger,
+  });
 
   if (claimError) {
     return jsonResponse({ error: "claim_failed" }, 500, origin);
+  }
+
+  const claimed: ClaimResult | null = (claimRows as ClaimResult[] | null)?.[0] ?? null;
+
+  // Already pending: nothing to dispatch, but this is not a rejection —
+  // the caller's loading state is correct as it stands.
+  if (claimed && !claimed.dispatch) {
+    return jsonResponse({ dispatched: true, request_id: claimed.id }, 200, origin);
   }
 
   if (!claimed) {

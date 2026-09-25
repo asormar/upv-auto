@@ -196,3 +196,32 @@ def test_login_failure_finishes_the_request_as_failed():
 
     assert result == 1
     assert directory.finished == [(REQUEST_ID, False, "fetch_failed")]
+
+
+class NoCredentialsDirectory(FakeUserDirectory):
+    """A user who signed up but never saved UPV credentials: the adapter
+    raises instead of returning a job (`SupabaseRestUserDirectory`)."""
+
+    def claim_request(self, request_id: str) -> RefreshJob:
+        raise CredentialsUnavailable("no stored credentials")
+
+
+def test_missing_stored_credentials_finishes_the_request():
+    # Otherwise the row stays `pending` for the full 15-minute expiry and the
+    # web shows a refresh that never ends.
+    directory = NoCredentialsDirectory(job=None)
+
+    result = refresh_user(
+        REQUEST_ID,
+        base_config(),
+        directory,
+        WorkingOpener(),
+        FakeAuthenticator(),
+        FakeVerifier(valid=True),
+        FakeNotifier(),
+        FakeClock(datetime(2024, 1, 6, 9, 0, 0, tzinfo=TZ)),
+        FakeActivityTableClient(fetch_results=[]),
+    )
+
+    assert result == 1
+    assert directory.finished == [(REQUEST_ID, False, "credentials_unavailable")]
