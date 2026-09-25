@@ -51,7 +51,11 @@ export function CredentialsForm({
     setBusy(true);
     setError(null);
     try {
-      await saveCredentials(username, password);
+      // A pasted or autocompleted user often carries stray whitespace; CAS
+      // rejects it with the same "invalid credentials" as a wrong password,
+      // which is impossible for the user to tell apart. The password is left
+      // exactly as typed: spaces can be part of it.
+      await saveCredentials(username.trim(), password);
       onSaved();
     } catch (cause) {
       setError(describeSaveError(cause));
@@ -70,9 +74,15 @@ export function CredentialsForm({
       </p>
       <label className="field">
         <span>Usuario UPV</span>
+        {/* Phone keyboards capitalise the first letter and autocorrect the
+            rest by default, which silently turns a valid UPV user into one
+            CAS rejects. */}
         <input
           type="text"
           autoComplete="username"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           required
           value={username}
           onChange={(event) => setUsername(event.target.value)}
