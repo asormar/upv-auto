@@ -195,7 +195,9 @@ def test_login_failure_finishes_the_request_as_failed():
     )
 
     assert result == 1
-    assert directory.finished == [(REQUEST_ID, False, "fetch_failed")]
+    # Credentials the UPV rejected are the user's to fix, so they get their
+    # own code instead of the generic fetch failure.
+    assert directory.finished == [(REQUEST_ID, False, "credentials_rejected")]
 
 
 class NoCredentialsDirectory(FakeUserDirectory):

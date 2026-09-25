@@ -8,6 +8,7 @@ could lock the account or look like an attack.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from upv_auto.domain.errors import (
     AuthenticationBlocked,
@@ -32,9 +33,20 @@ def authenticate(
     *,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     retry_delay_seconds: float = DEFAULT_RETRY_DELAY_SECONDS,
+    on_failure: Callable[[str], None] | None = None,
 ) -> Session | None:
-    """Return a verified Session, or None after notifying why login failed."""
+    """Return a verified Session, or None after notifying why login failed.
+
+    `on_failure` receives a coarse reason — "rejected" (UPV said the
+    credentials are wrong), "blocked" (captcha/2FA) or "unavailable" — so a
+    caller can tell the user which of those happened instead of reporting
+    every login problem the same way.
+    """
     last_problem = ""
+
+    def report(reason: str) -> None:
+        if on_failure is not None:
+            on_failure(reason)
 
     for attempt in range(1, max_attempts + 1):
         try:
@@ -42,10 +54,12 @@ def authenticate(
         except AuthenticationBlocked as exc:
             logger.warning("Login blocked: %s", exc)
             notifier.notify(f"Login blocked (captcha/2FA/unexpected page): {exc}")
+            report("blocked")
             return None
         except AuthenticationFailed as exc:
             logger.warning("Login failed: %s", exc)
             notifier.notify(f"Login failed: {exc}")
+            report("rejected")
             return None
         except AuthenticationUnavailable as exc:
             last_problem = f"UPV unavailable: {exc}"
@@ -66,4 +80,5 @@ def authenticate(
 
     logger.error("Login failed after %d attempt(s): %s", max_attempts, last_problem)
     notifier.notify(f"Login failed after {max_attempts} attempt(s): {last_problem}")
+    report("unavailable")
     return None

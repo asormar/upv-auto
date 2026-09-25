@@ -32,6 +32,8 @@ export interface RefreshStatus {
  * carry (`app.refresh_user`'s `finish_request` codes and `claim_refresh`'s
  * own `expired`). Unrecognized codes fall back to a generic message. */
 const DONE_ERRORS: Record<string, string> = {
+  credentials_rejected:
+    "La UPV ha rechazado tu usuario o contraseña. Cámbialos con el botón de la llave.",
   credentials_unavailable: "No se pudieron leer tus credenciales guardadas. Vuelve a introducirlas.",
   fetch_failed: "No se pudo obtener tu horario de la UPV. Se volverá a intentar más tarde.",
   error: "Ha ocurrido un error inesperado al actualizar tu horario.",

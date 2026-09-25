@@ -87,15 +87,29 @@ def refresh_user(
     # No bookings, no email: a refresh only reads the activity table.
     user_config = dataclasses.replace(config, credentials=credentials, email=None)
 
+    login_failure: list[str] = []
+
     try:
-        groups = fetch_schedule(user_config, authenticator, verifier, notifier, clock, table_client)
+        groups = fetch_schedule(
+            user_config,
+            authenticator,
+            verifier,
+            notifier,
+            clock,
+            table_client,
+            on_login_failure=login_failure.append,
+        )
     except Exception as exc:  # one user's refresh must never crash the runner
         logger.error("Unexpected error while refreshing: %s", type(exc).__name__)
         directory.finish_request(request_id, ok=False, error_code="error")
         return 1
 
     if groups is None:
-        directory.finish_request(request_id, ok=False, error_code="fetch_failed")
+        # Wrong UPV credentials are the user's to fix, so they must not read
+        # as "the UPV is down, we will retry".
+        reason = login_failure[0] if login_failure else ""
+        error_code = "credentials_rejected" if reason in ("rejected", "blocked") else "fetch_failed"
+        directory.finish_request(request_id, ok=False, error_code=error_code)
         return 1
 
     directory.save_schedule(job.user_id, groups)

@@ -21,6 +21,15 @@ export const Clock = ({ size = 18 }: IconProps) => (
   </svg>
 );
 
+export const Key = ({ size = 18 }: IconProps) => (
+  <svg {...base(size)}>
+    <circle cx="8" cy="12" r="4" />
+    <path d="M12 12h9" />
+    <path d="M17 12v3" />
+    <path d="M20 12v2" />
+  </svg>
+);
+
 export const SignOut = ({ size = 18 }: IconProps) => (
   <svg {...base(size)}>
     <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />

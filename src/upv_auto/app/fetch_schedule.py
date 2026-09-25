@@ -8,6 +8,7 @@ the caller as `None`.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from upv_auto.app.authenticate import authenticate
 from upv_auto.config import AppConfig
@@ -24,9 +25,17 @@ def fetch_schedule(
     notifier: Notifier,
     clock: Clock,
     table_client: ActivityTableClient,
+    *,
+    on_login_failure: Callable[[str], None] | None = None,
 ) -> dict[str, GroupAvailability] | None:
-    """Log in and fetch the activity table, or return None if that failed."""
-    session = authenticate(config.credentials, authenticator, verifier, notifier, clock)
+    """Log in and fetch the activity table, or return None if that failed.
+
+    `on_login_failure` is passed straight to `authenticate`, so a caller can
+    distinguish credentials the UPV rejected from the UPV being down.
+    """
+    session = authenticate(
+        config.credentials, authenticator, verifier, notifier, clock, on_failure=on_login_failure
+    )
     if session is None:
         return None
 

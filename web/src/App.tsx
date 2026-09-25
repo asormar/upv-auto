@@ -17,7 +17,8 @@ import { QueuePanel } from "./components/QueuePanel";
 import { QueuePanelSkeleton } from "./components/QueuePanelSkeleton";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { WeekBar } from "./components/WeekBar";
-import { Alert, Clock, Refresh, Shield, SignOut } from "./components/icons";
+import { Alert, Clock, Key, Refresh, Shield, SignOut } from "./components/icons";
+import { CredentialsForm } from "./components/CredentialsForm";
 import { describeActivity } from "./activity";
 import { NextRun } from "./components/NextRun";
 
@@ -33,6 +34,10 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState(false);
   const [justRemoved, setJustRemoved] = useState(false);
+  // Replacing already-stored UPV credentials (mistyped, or changed at the
+  // university): without this the credentials form is only ever reachable
+  // once, right after signing up.
+  const [editingCredentials, setEditingCredentials] = useState(false);
 
   const load = useCallback(async (refresh = false) => {
     setError(null);
@@ -141,6 +146,26 @@ export default function App() {
 
   return (
     <div className="shell">
+      {editingCredentials && (
+        <div
+          className="sheet-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Cambiar mis credenciales de la UPV"
+        >
+          <div className="sheet-card">
+            <CredentialsForm
+              title="Cambiar tus credenciales"
+              submitLabel="Guardar y actualizar"
+              onCancel={() => setEditingCredentials(false)}
+              onSaved={() => {
+                setEditingCredentials(false);
+                void refreshStatus.triggerManualRefresh();
+              }}
+            />
+          </div>
+        </div>
+      )}
       {schedule?.demo && (
         <div className="demobar">
           <Alert />
@@ -175,15 +200,26 @@ export default function App() {
           )}
           <ThemeToggle />
           {BACKEND === "supabase" && (
-            <button
-              className="icon-button press"
-              type="button"
-              onClick={() => void signOut()}
-              title="Cerrar sesión"
-              aria-label="Cerrar sesión"
-            >
-              <SignOut />
-            </button>
+            <>
+              <button
+                className="icon-button press"
+                type="button"
+                onClick={() => setEditingCredentials(true)}
+                title="Cambiar mis credenciales de la UPV"
+                aria-label="Cambiar mis credenciales de la UPV"
+              >
+                <Key />
+              </button>
+              <button
+                className="icon-button press"
+                type="button"
+                onClick={() => void signOut()}
+                title="Cerrar sesión"
+                aria-label="Cerrar sesión"
+              >
+                <SignOut />
+              </button>
+            </>
           )}
         </span>
       </header>

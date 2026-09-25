@@ -27,7 +27,19 @@ function describeSaveError(cause: unknown): string {
  * before they ever leave it (credential-custody spec's "Browser-Side
  * Sealing"). Shown by `AuthGate` right after sign-in/sign-up, before the
  * queue is usable. */
-export function CredentialsForm({ onSaved }: { onSaved: () => void }) {
+export function CredentialsForm({
+  onSaved,
+  onCancel,
+  title = "Tus credenciales de la UPV",
+  submitLabel = "Guardar credenciales",
+}: {
+  onSaved: () => void;
+  /** Only passed when the form is reopened to replace credentials that are
+   * already stored, where leaving without changing them is a valid choice. */
+  onCancel?: () => void;
+  title?: string;
+  submitLabel?: string;
+}) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [reveal, setReveal] = useState(false);
@@ -50,7 +62,7 @@ export function CredentialsForm({ onSaved }: { onSaved: () => void }) {
 
   return (
     <form className="authgate-form" onSubmit={submit}>
-      <h1 className="authgate-title">Tus credenciales de la UPV</h1>
+      <h1 className="authgate-title">{title}</h1>
       <p className="authgate-hint authgate-hint-seal">
         <Shield size={14} />
         Se sellan en tu navegador con una clave pública antes de enviarse. Solo la clave privada
@@ -99,8 +111,13 @@ export function CredentialsForm({ onSaved }: { onSaved: () => void }) {
             <Refresh size={14} />
           </span>
         )}
-        {busy ? "Sellando…" : "Guardar credenciales"}
+        {busy ? "Sellando…" : submitLabel}
       </button>
+      {onCancel && (
+        <button className="authgate-switch" type="button" onClick={onCancel} disabled={busy}>
+          Cancelar
+        </button>
+      )}
     </form>
   );
 }
