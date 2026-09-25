@@ -34,6 +34,9 @@ function supabase(): SupabaseClient {
 function translateAuthError(message: string): string {
   const known: Record<string, string> = {
     "Invalid login credentials": "Correo o contraseña incorrectos.",
+    // Only reachable while "Confirm email" is on in Supabase; the account
+    // exists but cannot sign in, which otherwise reads as a wrong password.
+    "Email not confirmed": "Tu cuenta aún no está confirmada. Avisa a quien administra la web.",
     "User already registered": "Ya existe una cuenta con ese correo.",
     "Password should be at least 6 characters": "La contraseña debe tener al menos 6 caracteres.",
     "Unable to validate email address: invalid format": "El correo no tiene un formato válido.",
