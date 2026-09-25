@@ -160,7 +160,7 @@ export default function App() {
               onCancel={() => setEditingCredentials(false)}
               onSaved={() => {
                 setEditingCredentials(false);
-                void refreshStatus.triggerManualRefresh();
+                void refreshStatus.triggerCredentialsRefresh();
               }}
             />
           </div>

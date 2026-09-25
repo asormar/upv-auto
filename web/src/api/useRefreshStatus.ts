@@ -26,6 +26,11 @@ export interface RefreshStatus {
   /** The manual "Actualizar tabla" button: rate-limited server-side (schedule-refresh
    * spec's "Manual Refresh Rate Limiting"). */
   triggerManualRefresh: () => Promise<void>;
+  /** Re-check right after saving new UPV credentials. Uses the "credentials"
+   * trigger, which skips the manual 5-minute limit: otherwise a user whose
+   * login was just rejected cannot verify the credentials they just fixed,
+   * and the app keeps showing the old failure. */
+  triggerCredentialsRefresh: () => Promise<void>;
 }
 
 /** Spanish copy for a `refresh_requests.error_code` a finished request may
@@ -129,19 +134,22 @@ export function useRefreshStatus(onRefreshed: () => void): RefreshStatus {
     };
   }, [handleRow]);
 
-  const triggerManualRefresh = useCallback(async () => {
+  const trigger = useCallback(async (kind: "manual" | "credentials") => {
     setMessage(null);
     // Feedback belongs to the click, not to the round trip: invoking the
     // Edge Function (which calls GitHub) takes a noticeable moment, and a
     // button that does nothing meanwhile reads as broken.
     setPending(true);
     try {
-      await requestRefresh("manual");
+      await requestRefresh(kind);
     } catch (cause) {
       setPending(false);
       setMessage(cause instanceof Error ? cause.message : String(cause));
     }
   }, []);
 
-  return { pending, message, triggerManualRefresh };
+  const triggerManualRefresh = useCallback(() => trigger("manual"), [trigger]);
+  const triggerCredentialsRefresh = useCallback(() => trigger("credentials"), [trigger]);
+
+  return { pending, message, triggerManualRefresh, triggerCredentialsRefresh };
 }

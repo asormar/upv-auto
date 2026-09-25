@@ -51,7 +51,10 @@ export interface Config {
 }
 
 /** What triggered a schedule refresh; mirrors `refresh_requests.trigger` (design.md). */
-export type RefreshTrigger = "signin" | "manual";
+/** "credentials" is the re-check right after saving new UPV credentials:
+ * exempt from the manual 5-minute limit, since it is the only way a user can
+ * fix a rejected login. */
+export type RefreshTrigger = "signin" | "manual" | "credentials";
 
 /**
  * One parsed UPV activity-table cell, as cached in `schedules.groups`

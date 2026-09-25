@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "invalid_body" }, 400, origin);
   }
 
-  if (trigger !== "signin" && trigger !== "manual") {
+  if (trigger !== "signin" && trigger !== "manual" && trigger !== "credentials") {
     return jsonResponse({ error: "invalid_trigger" }, 400, origin);
   }
 
