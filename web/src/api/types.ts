@@ -16,6 +16,10 @@ export interface Slot {
 export interface Day {
   name: string;
   slots: Slot[];
+  /** Holiday of the booked week: nothing can be added to it. */
+  closed?: boolean;
+  /** Why the day is closed or has no groups, shown above its slots. */
+  notice?: string;
 }
 
 export interface Limits {

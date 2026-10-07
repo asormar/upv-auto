@@ -21,6 +21,8 @@ import { Alert, Clock, Key, Refresh, Shield, SignOut } from "./components/icons"
 import { CredentialsForm } from "./components/CredentialsForm";
 import { describeActivity } from "./activity";
 import { NextRun } from "./components/NextRun";
+import { nextRunAt } from "./nextRun";
+import { completeWeek } from "./week";
 
 export default function App() {
   const [config, setConfig] = useState<Config | null>(null);
@@ -60,12 +62,25 @@ export default function App() {
     void load();
   }, [load]);
 
-  // Start on the first day that already holds something of yours.
+  // The UPV table is the current week; the queue books the next one. Fill in
+  // the holidays the table cannot show (see `week.ts`).
+  const days = useMemo(
+    () =>
+      completeWeek(
+        schedule?.days ?? [],
+        config ? nextRunAt(config.window.weekday, config.window.opens_at) : null,
+      ),
+    [schedule, config?.window.weekday, config?.window.opens_at],
+  );
+
+  // Start on the first day that already holds something of yours, else the
+  // first one that is open.
   useEffect(() => {
     if (!schedule) return;
-    const mine = schedule.days.findIndex((day) => day.slots.some((slot) => slot.queued));
-    setDayIndex(mine >= 0 ? mine : 0);
-  }, [schedule?.fetched_at]);
+    const mine = days.findIndex((day) => day.slots.some((slot) => slot.queued));
+    const open = days.findIndex((day) => !day.closed);
+    setDayIndex(mine >= 0 ? mine : Math.max(open, 0));
+  }, [schedule?.fetched_at, config?.window.weekday, config?.window.opens_at]);
 
   const bookings = config?.bookings ?? [];
   const queuedCodes = useMemo(
@@ -135,7 +150,7 @@ export default function App() {
     await refreshStatus.triggerManualRefresh();
   };
 
-  const day = schedule?.days[dayIndex];
+  const day = days[dayIndex];
   const limits = schedule?.limits;
   const limitReached = limits ? limits.queued >= limits.max_per_activity : false;
   const nextRun = config ? (
@@ -230,13 +245,15 @@ export default function App() {
           {schedule ? describeActivity(schedule.activity) : "Cargando…"}
         </h1>
 
-        <WeekBar days={schedule?.days ?? []} activeIndex={dayIndex} onSelect={setDayIndex} />
+        <WeekBar days={days} activeIndex={dayIndex} onSelect={setDayIndex} />
 
         {schedule ? (
           <DayRail
             slots={day?.slots ?? []}
             busy={busy}
             limitReached={limitReached}
+            closed={day?.closed}
+            notice={day?.notice}
             onToggle={toggleSlot}
           />
         ) : (
@@ -251,7 +268,7 @@ export default function App() {
       {limits && config ? (
         <QueuePanel
           bookings={bookings}
-          days={schedule?.days ?? []}
+          days={days}
           limits={limits}
           nextRun={nextRun}
           busy={busy}

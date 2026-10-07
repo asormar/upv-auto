@@ -35,7 +35,7 @@ function compareStrings(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-function dayRank(name: string): number {
+export function dayRank(name: string): number {
   return DAY_ORDER[name.trim().toLowerCase()] ?? 99;
 }
 

@@ -19,6 +19,8 @@ const EDGE_MS = 340;
 const TRAIL_DELAY_MS = 120;
 
 function note(day: Day): string {
+  if (day.closed) return "Festivo";
+  if (day.notice && day.slots.length === 0) return "Sin datos";
   const mine = day.slots.filter((slot) => slot.queued).length;
   if (mine > 0) return `${mine} ${mine === 1 ? "reserva" : "reservas"}`;
   const open = day.slots.filter((slot) => slot.state === "BOOKABLE").length;
