@@ -18,6 +18,8 @@ export interface Day {
   slots: Slot[];
   /** Holiday of the booked week: nothing can be added to it. */
   closed?: boolean;
+  /** The UPV hid the day, so its slots are the usual ones, not the table's. */
+  typical?: boolean;
   /** Why the day is closed or has no groups, shown above its slots. */
   notice?: string;
 }

@@ -4,8 +4,9 @@
 // so it can neither show next week's holiday nor keep the empty weekday. The
 // calendar below fills both gaps.
 
-import type { Day } from "./api/types";
-import { dayRank } from "./scheduleView";
+import type { Booking, Day } from "./api/types";
+import { buildDays, dayRank } from "./scheduleView";
+import { typicalGroups } from "./typicalWeek";
 
 const WEEKDAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"];
 
@@ -55,11 +56,18 @@ function bookedMonday(nextRun: Date): Date {
  * Monday to Friday of the booked week, in order, then any weekend day the
  * table carries.
  *
- * A weekday is kept when it has groups, and added empty when the calendar
- * explains it: it is a holiday of the booked week (`closed`), or it is a
- * holiday of the week the table shows, so the UPV left it out.
+ * A weekday is kept when it has groups, and added when the calendar explains
+ * it: it is a holiday of the booked week (`closed`, empty), or it is a
+ * holiday of the week the table shows, so the UPV left it out and its usual
+ * groups stand in (`typical`).
  */
-export function completeWeek(days: Day[], nextRun: Date | null, now: Date = new Date()): Day[] {
+export function completeWeek(
+  days: Day[],
+  nextRun: Date | null,
+  codacti: string,
+  bookings: Booking[],
+  now: Date = new Date(),
+): Day[] {
   if (!nextRun) return days;
   const booked = bookedMonday(nextRun);
   const shown = mondayOf(now);
@@ -81,10 +89,18 @@ export function completeWeek(days: Day[], nextRun: Date | null, now: Date = new 
       ];
     }
     if (!found && hiddenBy) {
+      const raw = typicalGroups(codacti, index, name);
+      const usual = raw ? (buildDays(raw, bookings)[0]?.slots ?? []) : [];
+      const why = `la UPV oculta este ${name.toLowerCase()} por el festivo (${hiddenBy})`;
       return [
         {
           ...base,
-          notice: `Aún no hay grupos del ${name.toLowerCase()}: la UPV los oculta esta semana por el festivo (${hiddenBy}) y no vuelven a su tabla hasta que cambie de semana.`,
+          slots: usual,
+          typical: usual.length > 0,
+          notice:
+            usual.length > 0
+              ? `Horarios habituales del ${name.toLowerCase()}: ${why}. Las plazas se abren el sábado, así que aún no se puede ver su disponibilidad.`
+              : `Aún no hay grupos del ${name.toLowerCase()}: ${why} y no vuelven a su tabla hasta que cambie de semana.`,
         },
       ];
     }

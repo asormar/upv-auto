@@ -62,6 +62,8 @@ export default function App() {
     void load();
   }, [load]);
 
+  const bookings = config?.bookings ?? [];
+
   // The UPV table is the current week; the queue books the next one. Fill in
   // the holidays the table cannot show (see `week.ts`).
   const days = useMemo(
@@ -69,8 +71,10 @@ export default function App() {
       completeWeek(
         schedule?.days ?? [],
         config ? nextRunAt(config.window.weekday, config.window.opens_at) : null,
+        schedule?.activity.codacti ?? "",
+        config?.bookings ?? [],
       ),
-    [schedule, config?.window.weekday, config?.window.opens_at],
+    [schedule, config?.window.weekday, config?.window.opens_at, config?.bookings],
   );
 
   // Start on the first day that already holds something of yours, else the
@@ -82,7 +86,6 @@ export default function App() {
     setDayIndex(mine >= 0 ? mine : Math.max(open, 0));
   }, [schedule?.fetched_at, config?.window.weekday, config?.window.opens_at]);
 
-  const bookings = config?.bookings ?? [];
   const queuedCodes = useMemo(
     () => new Set(bookings.flatMap((booking) => [booking.group_code, ...booking.alternatives])),
     [bookings],
