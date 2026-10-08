@@ -58,4 +58,5 @@ export {
   sendFriendRequest,
   setAlias,
   setAvatar,
+  subscribeToFriendships,
 } from "./api/supabase";

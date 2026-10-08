@@ -388,6 +388,28 @@ export async function listFriends(): Promise<Friend[]> {
   }));
 }
 
+/**
+ * Tells the caller whenever one of the user's friendships is created, accepted
+ * or removed. RLS limits what Realtime delivers to the user's own rows, so no
+ * filter is needed; the payload is ignored on purpose (a delete carries only
+ * the id) and the caller re-reads the list. `onStatus` reports the channel
+ * state so the caller can read again after a reconnect, which is when events
+ * may have been missed. Returns an unsubscribe function.
+ */
+export function subscribeToFriendships(
+  onChange: () => void,
+  onStatus?: (status: string) => void,
+): () => void {
+  const channel = supabase()
+    .channel(`friendships:${crypto.randomUUID()}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "friendships" }, () => onChange())
+    .subscribe((status) => onStatus?.(status));
+
+  return () => {
+    void supabase().removeChannel(channel);
+  };
+}
+
 /** Resolves to `accepted` when the other side had already asked for this user. */
 export async function sendFriendRequest(code: string): Promise<"requested" | "accepted"> {
   const { data, error } = await supabase().rpc("send_friend_request", { p_code: code });
