@@ -13,7 +13,10 @@ export type {
   Booking,
   Config,
   Day,
+  Friend,
+  FriendRelation,
   Limits,
+  Profile,
   RawGroup,
   RawGroups,
   RefreshTrigger,
@@ -44,4 +47,15 @@ export {
   signIn,
   signOut,
   signUp,
+} from "./api/supabase";
+
+// Friends are accounts too: same rule, never called under `BACKEND === "local"`.
+export {
+  getProfile,
+  listFriends,
+  removeFriendship,
+  respondFriendRequest,
+  sendFriendRequest,
+  setAlias,
+  setAvatar,
 } from "./api/supabase";

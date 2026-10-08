@@ -5,7 +5,17 @@
 
 import { createClient, type SupabaseClient, type Session } from "@supabase/supabase-js";
 import { buildDays, countEnrolledNow } from "../scheduleView";
-import type { Backend, Booking, Config, RawGroups, RefreshTrigger, Schedule } from "./types";
+import type {
+  Backend,
+  Booking,
+  Config,
+  Friend,
+  FriendRelation,
+  Profile,
+  RawGroups,
+  RefreshTrigger,
+  Schedule,
+} from "./types";
 
 // `createClient` validates its URL/key eagerly (throws if either is empty),
 // so the client is built lazily on first use rather than at module load.
@@ -288,6 +298,115 @@ export async function getSchedule(_refresh = false): Promise<Schedule> {
     },
     days: buildDays(groups, config.bookings),
   };
+}
+
+// ---------- friends ----------
+//
+// Supabase only: the local FastAPI backend has no accounts, so `api.ts`
+// re-exports these directly instead of routing them through `Backend`.
+// Everything goes through `0002_friends.sql`: a friend's queue is only
+// readable through `list_friends()`, which returns preferred codes alone.
+
+const FRIEND_ERRORS: Record<string, string> = {
+  friend_code_not_found: "No existe ningún usuario con ese código.",
+  cannot_friend_self: "Ese es tu propio código.",
+  already_friends: "Ya sois amigos.",
+  request_already_sent: "Ya le enviaste una solicitud. Falta que la acepte.",
+  request_not_found: "Esa solicitud ya no existe.",
+  not_signed_in: "Tu sesión ha caducado. Vuelve a iniciar sesión.",
+};
+
+function translateFriendError(message: string): string {
+  const code = Object.keys(FRIEND_ERRORS).find((known) => message.includes(known));
+  return code ? FRIEND_ERRORS[code] : `No se pudo completar la operación: ${message}`;
+}
+
+export async function getProfile(): Promise<Profile> {
+  const { data, error } = await supabase()
+    .from("profiles")
+    .select("friend_code, alias, avatar")
+    .single<Profile>();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+async function updateOwnProfile(patch: { alias: string } | { avatar: string | null }): Promise<Profile> {
+  const {
+    data: { user },
+  } = await supabase().auth.getUser();
+  if (!user) throw new Error("Sesión no iniciada.");
+
+  const { data, error } = await supabase()
+    .from("profiles")
+    .update(patch)
+    .eq("user_id", user.id)
+    .select("friend_code, alias, avatar")
+    .single<Profile>();
+  if (error) {
+    // The column's check (0005_profile_avatar.sql) is the last line of
+    // defence; the browser already shrinks the photo well below it.
+    if (error.message.includes("profiles_avatar_check")) {
+      throw new Error("No se pudo guardar la foto: es demasiado grande o no es una imagen válida.");
+    }
+    throw new Error(error.message);
+  }
+  return data;
+}
+
+export async function setAlias(alias: string): Promise<Profile> {
+  const trimmed = alias.trim();
+  if (trimmed.length < 1 || trimmed.length > 24) {
+    throw new Error("El alias debe tener entre 1 y 24 caracteres.");
+  }
+  return updateOwnProfile({ alias: trimmed });
+}
+
+/** A data URL of the already-shrunk photo, or null to go back to the initial. */
+export async function setAvatar(avatar: string | null): Promise<Profile> {
+  return updateOwnProfile({ avatar });
+}
+
+export async function listFriends(): Promise<Friend[]> {
+  const { data, error } = await supabase().rpc("list_friends");
+  if (error) throw new Error(translateFriendError(error.message));
+  return (
+    (data as
+      | {
+          friendship_id: string;
+          friend_alias: string;
+          relation: FriendRelation;
+          group_codes: string[];
+          friend_avatar: string | null;
+        }[]
+      | null) ?? []
+  ).map((row) => ({
+    id: row.friendship_id,
+    alias: row.friend_alias,
+    relation: row.relation,
+    group_codes: row.group_codes,
+    avatar: row.friend_avatar,
+  }));
+}
+
+/** Resolves to `accepted` when the other side had already asked for this user. */
+export async function sendFriendRequest(code: string): Promise<"requested" | "accepted"> {
+  const { data, error } = await supabase().rpc("send_friend_request", { p_code: code });
+  if (error) throw new Error(translateFriendError(error.message));
+  return data as "requested" | "accepted";
+}
+
+export async function respondFriendRequest(friendshipId: string, accept: boolean): Promise<void> {
+  const { error } = await supabase().rpc("respond_friend_request", {
+    p_friendship_id: friendshipId,
+    p_accept: accept,
+  });
+  if (error) throw new Error(translateFriendError(error.message));
+}
+
+/** Unfriends, or withdraws a request this user sent: either side may delete the row. */
+export async function removeFriendship(friendshipId: string): Promise<void> {
+  const { error } = await supabase().from("friendships").delete().eq("id", friendshipId);
+  if (error) throw new Error(translateFriendError(error.message));
 }
 
 // Structural check only: keeps this module's exports in sync with `Backend`.

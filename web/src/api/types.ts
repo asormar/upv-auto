@@ -78,6 +78,28 @@ export interface RawGroup {
 
 export type RawGroups = Record<string, RawGroup>;
 
+/** The signed-in user's own profile: what a friend types to add them. */
+export interface Profile {
+  friend_code: string;
+  alias: string;
+  /** Small data URL of the photo, null while there is none. */
+  avatar: string | null;
+}
+
+/** `friend` is accepted; `incoming` awaits this user's answer; `outgoing` awaits theirs. */
+export type FriendRelation = "friend" | "incoming" | "outgoing";
+
+export interface Friend {
+  /** The friendship row: what accepting, declining or removing refers to. */
+  id: string;
+  alias: string;
+  relation: FriendRelation;
+  /** Preferred group codes of the friend's queue; empty unless `friend`. */
+  group_codes: string[];
+  /** The friend's photo; null for none, and always null unless `friend`. */
+  avatar: string | null;
+}
+
 /** Every backend (`local.ts`, `supabase.ts`) implements this shape; `api.ts` dispatches to it. */
 export interface Backend {
   getConfig(): Promise<Config>;
