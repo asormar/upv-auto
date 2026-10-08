@@ -14,13 +14,15 @@ import {
 import { useFriends } from "./api/useFriends";
 import { useRefreshStatus } from "./api/useRefreshStatus";
 import { DayRail } from "./components/DayRail";
+import { FriendsButton } from "./components/FriendsButton";
 import { FriendsDialog } from "./components/FriendsDialog";
+import { FriendsLive } from "./components/FriendsLive";
 import { FriendsWeek } from "./components/FriendsWeek";
 import { QueuePanel } from "./components/QueuePanel";
 import { QueuePanelSkeleton } from "./components/QueuePanelSkeleton";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { WeekBar } from "./components/WeekBar";
-import { Alert, Clock, Key, People, Refresh, Shield, SignOut } from "./components/icons";
+import { Alert, Clock, Key, Refresh, Shield, SignOut } from "./components/icons";
 import { CredentialsForm } from "./components/CredentialsForm";
 import { describeActivity } from "./activity";
 import { NextRun } from "./components/NextRun";
@@ -190,6 +192,7 @@ export default function App() {
           </div>
         </div>
       )}
+      {BACKEND === "supabase" && <FriendsLive notice={friends.notice} silenced={friendsOpen} />}
       {friendsOpen && <FriendsDialog state={friends} onClose={() => setFriendsOpen(false)} />}
       {schedule?.demo && (
         <div className="demobar">
@@ -226,24 +229,11 @@ export default function App() {
           <ThemeToggle />
           {BACKEND === "supabase" && (
             <>
-              <button
-                className="icon-button press"
-                type="button"
-                onClick={() => setFriendsOpen(true)}
-                title="Amigos"
-                aria-label={
-                  incomingRequests > 0
-                    ? `Amigos, ${incomingRequests} ${incomingRequests === 1 ? "solicitud pendiente" : "solicitudes pendientes"}`
-                    : "Amigos"
-                }
-              >
-                <People />
-                {incomingRequests > 0 && (
-                  <span className="icon-badge num" aria-hidden="true">
-                    {incomingRequests}
-                  </span>
-                )}
-              </button>
+              <FriendsButton
+                incoming={incomingRequests}
+                loading={friends.loading}
+                onOpen={() => setFriendsOpen(true)}
+              />
               <button
                 className="icon-button press"
                 type="button"

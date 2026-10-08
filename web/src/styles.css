@@ -272,25 +272,158 @@ button,
   text-align: center;
   box-shadow: 0 0 0 2px var(--bg);
 }
+/* One pop each time the count goes up: a nudge, not a loop. */
+.icon-badge.pop {
+  animation: badge-pop 220ms var(--ease-out);
+}
+@keyframes badge-pop {
+  0% {
+    transform: scale(0.9);
+  }
+  55% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .icon-badge.pop {
+    animation: none;
+  }
+}
 
-/* Friends dialog. Reuses the sheet's entrance; only its content is new. */
+/* ---------- friends dialog ----------
+   Reuses the sheet's entrance. The card is the scroll area; its header (title,
+   close, tabs) stays put while the panels scroll under it. */
 .friends-dialog {
+  --fd-pad: 24px;
   max-width: 420px;
   max-height: calc(100dvh - 32px);
+  padding: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
 }
 /* A programmatic focus target (so the label is read on open), not a control. */
 .friends-dialog:focus-visible {
   outline: none;
 }
+.fd-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px var(--fd-pad) 12px;
+  background: var(--card);
+}
+.fd-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 .fd-title {
   font-size: 22px;
   font-weight: 600;
 }
+.fd-close {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  /* Lines the icon up with the content edge instead of the hit area's. */
+  margin-right: -8px;
+  border: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 160ms ease, transform 120ms var(--ease-out);
+}
+
+/* Segmented control. The thumb slides under the labels; nothing else moves. */
+.fd-tabs {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--switch);
+}
+.fd-tabs-thumb {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px) / var(--n));
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  transform: translateX(calc(var(--i) * 100%));
+  transition: transform 200ms var(--ease-out);
+}
+.fd-tab {
+  position: relative;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: color 150ms var(--ease-out);
+}
+.fd-tab[aria-selected="true"] {
+  color: var(--ink);
+}
+.fd-tab-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.fd-body,
+.fd-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.fd-body {
+  padding: 6px var(--fd-pad) var(--fd-pad);
+}
+.fd-panel[hidden] {
+  display: none;
+}
+/* Only after the user switched: opening the dialog is not a tab change. */
+.fd-panel.swap:not([hidden]) {
+  animation: fd-fade 150ms var(--ease-out);
+}
+@keyframes fd-fade {
+  from {
+    opacity: 0;
+  }
+}
+/* The live region exists even when empty; it must not leave a gap then. */
+.fd-live:empty {
+  margin-bottom: -22px;
+}
+
 .fd-section {
   display: flex;
   flex-direction: column;
@@ -302,14 +435,55 @@ button,
   letter-spacing: 0;
   color: var(--muted);
 }
-.fd-codebar {
+.fd-intro {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--body);
+}
+.fd-footnote {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+/* Requests wait on the user, so they get the accent surface. */
+.fd-requests {
+  --hl: var(--accent-line);
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--accent-soft);
+}
+.fd-requests .fd-heading {
+  color: var(--accent-ink);
+}
+/* The avatar's own tint is the block's tint: lift it onto the card colour. */
+.fd-requests .avatar {
+  background: var(--card);
+}
+
+.fd-yourcode {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+}
+.fd-yourcode-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 10px 10px 16px;
-  border-radius: 14px;
-  background: var(--accent-soft);
+  gap: 8px;
+}
+.fd-yourcode-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.fd-yourcode-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .fd-code,
 .fd-codeinput {
@@ -318,10 +492,30 @@ button,
 .fd-code {
   font-size: 24px;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.14em;
+  line-height: 1.25;
   color: var(--accent-ink);
   user-select: all;
   -webkit-user-select: all;
+}
+.fd-code-skel {
+  width: 11ch;
+  max-width: 100%;
+  height: 30px;
+  border-radius: 8px;
+}
+.fd-code-missing {
+  font-size: 14px;
+  color: var(--muted);
+}
+.fd-skel {
+  background: linear-gradient(90deg, var(--accent-line), var(--accent-soft), var(--accent-line));
+  background-size: 300% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+.fd-intro-skel {
+  height: 42px;
+  border-radius: 10px;
 }
 .field .fd-codeinput {
   letter-spacing: 0.12em;
@@ -332,7 +526,7 @@ button,
   gap: 8px;
 }
 .fd-inline input {
-  flex: 1 1 140px;
+  flex: 1 1 150px;
   min-width: 0;
 }
 .fd-inline .cta {
@@ -344,6 +538,19 @@ button,
   gap: 5px;
   min-height: 16px;
   font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.fd-note.ok {
+  color: var(--ok);
+}
+.fd-note.bad {
+  color: var(--accent-ink);
+}
+/* The guidance under an error message: what to do about it. */
+.fd-hint {
+  display: block;
+  margin-top: 2px;
   font-weight: 400;
   color: var(--muted);
 }
@@ -365,18 +572,28 @@ button,
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.fd-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Padded and pulled back out so a highlight has room around the avatar. */
 .fd-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 48px;
-  border-top: 1px solid var(--line);
-}
-.fd-heading + .fd-row {
-  border-top: 0;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-height: 52px;
+  margin: 0 -8px;
+  padding: 8px;
+  border-radius: 12px;
 }
 .fd-alias {
-  flex: 1;
+  flex: 1 1 96px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -384,6 +601,102 @@ button,
   font-size: 15px;
   font-weight: 600;
   color: var(--ink);
+}
+.fd-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex: none;
+}
+/* Answering a request is the point of the block: its buttons get a line of
+   their own, as wide as the row, instead of squeezing the name. */
+.fd-row.stacked .fd-actions {
+  flex: 1 1 100%;
+}
+.fd-row.stacked .fd-actions .cta {
+  flex: 1 1 0;
+  justify-content: center;
+}
+/* What arrives after the list is open rises into place; what the user was
+   already looking at never moves. */
+.fd-row.enter {
+  animation: fd-enter 220ms var(--ease-out) both;
+}
+@keyframes fd-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+/* Something that just arrived from outside: a wash that fades away. */
+.fd-row.hl {
+  animation: fd-highlight 1600ms var(--ease-out) both;
+}
+.fd-row.enter.hl {
+  animation: fd-enter 220ms var(--ease-out) both, fd-highlight 1600ms var(--ease-out) both;
+}
+@keyframes fd-highlight {
+  from {
+    background-color: var(--hl, var(--accent-soft));
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+/* Every hit area at least 44px where a finger is the pointer; the desktop
+   keeps its tighter sizes. */
+@media (pointer: coarse) {
+  .friends-dialog .cta.sm,
+  .fd-tab {
+    min-height: 44px;
+  }
+  .fd-close {
+    width: 44px;
+    height: 44px;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .fd-close:hover {
+    color: var(--accent-ink);
+  }
+  .fd-tab[aria-selected="false"]:hover {
+    color: var(--ink);
+  }
+}
+@media (max-width: 380px) {
+  .friends-dialog {
+    --fd-pad: 18px;
+  }
+  .fd-requests {
+    padding: 12px;
+  }
+}
+@media (max-width: 340px) {
+  .fd-inline .cta {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fd-tabs-thumb {
+    transition: none;
+  }
+  /* Nothing travels: rows fade in, and the wash stays flat until it is removed. */
+  .fd-row.enter {
+    animation: fd-fade 150ms linear both;
+  }
+  .fd-row.hl {
+    animation: none;
+    background-color: var(--hl, var(--accent-soft));
+  }
+  .fd-row.enter.hl {
+    animation: fd-fade 150ms linear both;
+  }
+  .fd-skel {
+    animation: none;
+  }
 }
 
 .toggle {

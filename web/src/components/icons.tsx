@@ -119,3 +119,16 @@ export const EyeOff = ({ size = 16 }: IconProps) => (
     <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
   </svg>
 );
+
+export const Close = ({ size = 18 }: IconProps) => (
+  <svg {...base(size)} strokeWidth={2}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+);
+
+export const Bell = ({ size = 15 }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z" />
+    <path d="M10 20.5a2 2 0 0 0 4 0" />
+  </svg>
+);
