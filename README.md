@@ -99,7 +99,8 @@ GitHub Actions (the only UPV client)
 - **Supabase**: identity (Supabase Auth), sealed credentials, each user's
   booking queue, a cached schedule per user, and refresh/result tracking —
   all under Row-Level Security, so one user's Postgres row is invisible to
-  another. `supabase/migrations/0001_multi_user.sql` is the full schema;
+  another. `supabase/migrations/` holds the schema, one numbered file per
+  change (friends and profile photos are `0004` and `0005`);
   `supabase/functions/` holds the two Edge Functions (`refresh`,
   `delete-account`).
 - **GitHub Actions** stays the only thing that ever talks to UPV, exactly as
@@ -127,8 +128,10 @@ Everything below is done once by whoever runs the deployment — not by each
 user. Checklist order matters (secrets before the workflow that reads them).
 
 - [ ] **Supabase project**: create a free-tier project, then apply
-      `supabase/migrations/0001_multi_user.sql` (SQL editor or
-      `supabase db push`) and deploy both Edge Functions:
+      every file in `supabase/migrations/`, in numeric order (SQL editor,
+      or `supabase db query --linked -f <file>` for one file; `supabase db
+      push` only works on a project whose migration history was kept) and
+      deploy both Edge Functions:
       `supabase functions deploy refresh` and
       `supabase functions deploy delete-account`.
 - [ ] **Edge Function secrets** (`supabase secrets set NAME=value`, not
