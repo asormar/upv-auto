@@ -30,7 +30,22 @@ export const Key = ({ size = 18 }: IconProps) => (
   </svg>
 );
 
-export const SignOut = ({ size = 18 }: IconProps) => (
+export const People = ({ size = 18 }: IconProps) => (
+  <svg {...base(size)}>
+    <circle cx="9" cy="8" r="3.5" />
+    <path d="M2.5 20c.4-3.6 3.1-6 6.5-6s6.1 2.4 6.5 6" />
+    <path d="M16 4.7a3.5 3.5 0 0 1 0 6.6" />
+    <path d="M18 14.4c2 .6 3.3 2.6 3.5 5.6" />
+  </svg>
+);
+
+export const Chevron = ({ size = 16 }: IconProps) => (
+  <svg {...base(size)} strokeWidth={2}>
+    <path d="M6 9l6 6 6-6" />
+  </svg>
+);
+
+export const SignOut =({ size = 18 }: IconProps) => (
   <svg {...base(size)}>
     <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
     <path d="M10 8l-4 4 4 4" />

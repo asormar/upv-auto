@@ -8,6 +8,8 @@ interface Props {
   days: Day[];
   limits: Limits;
   nextRun: ReactNode;
+  /** What the user's friends have booked; sits above the limits. */
+  friends?: ReactNode;
   busy: boolean;
   emailNotifications: boolean;
   justAdded: boolean;
@@ -78,6 +80,7 @@ export function QueuePanel({
   days,
   limits,
   nextRun,
+  friends,
   busy,
   emailNotifications,
   justAdded,
@@ -111,6 +114,8 @@ export function QueuePanel({
           {emailNotifications ? " Te avisamos por correo del resultado." : ""}
         </p>
       </div>
+
+      {friends}
 
       <div className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <span style={{ fontSize: 13, color: "var(--muted)" }}>Límite UPV</span>

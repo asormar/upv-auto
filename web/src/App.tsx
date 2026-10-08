@@ -11,13 +11,16 @@ import {
   type Schedule,
   type Slot,
 } from "./api";
+import { useFriends } from "./api/useFriends";
 import { useRefreshStatus } from "./api/useRefreshStatus";
 import { DayRail } from "./components/DayRail";
+import { FriendsDialog } from "./components/FriendsDialog";
+import { FriendsWeek } from "./components/FriendsWeek";
 import { QueuePanel } from "./components/QueuePanel";
 import { QueuePanelSkeleton } from "./components/QueuePanelSkeleton";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { WeekBar } from "./components/WeekBar";
-import { Alert, Clock, Key, Refresh, Shield, SignOut } from "./components/icons";
+import { Alert, Clock, Key, People, Refresh, Shield, SignOut } from "./components/icons";
 import { CredentialsForm } from "./components/CredentialsForm";
 import { describeActivity } from "./activity";
 import { NextRun } from "./components/NextRun";
@@ -40,6 +43,9 @@ export default function App() {
   // university): without this the credentials form is only ever reachable
   // once, right after signing up.
   const [editingCredentials, setEditingCredentials] = useState(false);
+  const [friendsOpen, setFriendsOpen] = useState(false);
+  const friends = useFriends();
+  const incomingRequests = friends.friends.filter((friend) => friend.relation === "incoming").length;
 
   const load = useCallback(async (refresh = false) => {
     setError(null);
@@ -184,6 +190,7 @@ export default function App() {
           </div>
         </div>
       )}
+      {friendsOpen && <FriendsDialog state={friends} onClose={() => setFriendsOpen(false)} />}
       {schedule?.demo && (
         <div className="demobar">
           <Alert />
@@ -219,6 +226,24 @@ export default function App() {
           <ThemeToggle />
           {BACKEND === "supabase" && (
             <>
+              <button
+                className="icon-button press"
+                type="button"
+                onClick={() => setFriendsOpen(true)}
+                title="Amigos"
+                aria-label={
+                  incomingRequests > 0
+                    ? `Amigos, ${incomingRequests} ${incomingRequests === 1 ? "solicitud pendiente" : "solicitudes pendientes"}`
+                    : "Amigos"
+                }
+              >
+                <People />
+                {incomingRequests > 0 && (
+                  <span className="icon-badge num" aria-hidden="true">
+                    {incomingRequests}
+                  </span>
+                )}
+              </button>
               <button
                 className="icon-button press"
                 type="button"
@@ -274,6 +299,11 @@ export default function App() {
           days={days}
           limits={limits}
           nextRun={nextRun}
+          friends={
+            BACKEND === "supabase" && (
+              <FriendsWeek friends={friends.friends} days={days} bookings={bookings} />
+            )
+          }
           busy={busy}
           emailNotifications={config.email_notifications}
           justAdded={justAdded}

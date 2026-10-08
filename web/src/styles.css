@@ -234,6 +234,7 @@ button,
 /* Icon-only topbar action, sized to match the theme toggle's height so the
    two sit on the same baseline. */
 .icon-button {
+  position: relative;
   width: 44px;
   height: 44px;
   border: 0;
@@ -253,6 +254,136 @@ button,
 }
 .icon-button:active {
   transform: scale(0.92);
+}
+/* Pending friend requests, on the corner of the topbar button. */
+.icon-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+/* Friends dialog. Reuses the sheet's entrance; only its content is new. */
+.friends-dialog {
+  max-width: 420px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+/* A programmatic focus target (so the label is read on open), not a control. */
+.friends-dialog:focus-visible {
+  outline: none;
+}
+.fd-title {
+  font-size: 22px;
+  font-weight: 600;
+}
+.fd-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fd-heading {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.fd-codebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 10px 10px 16px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+}
+.fd-code,
+.fd-codeinput {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+.fd-code {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--accent-ink);
+  user-select: all;
+  -webkit-user-select: all;
+}
+.field .fd-codeinput {
+  letter-spacing: 0.12em;
+}
+.fd-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fd-inline input {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.fd-inline .cta {
+  min-height: 44px;
+}
+.fd-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 16px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.fd-photo {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.fd-photo-side {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.fd-photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fd-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  border-top: 1px solid var(--line);
+}
+.fd-heading + .fd-row {
+  border-top: 0;
+}
+.fd-alias {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .toggle {
@@ -516,6 +647,24 @@ button,
   opacity: 0.45;
   cursor: not-allowed;
 }
+.cta.sm {
+  min-height: 40px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+/* Text for screen readers only. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 /* ---------- side panel ---------- */
 .panel {
@@ -568,6 +717,222 @@ button,
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ---------- friends' week ---------- */
+/* The header is the whole collapsed card; the table folds away under it. */
+.card.friends {
+  padding: 0;
+}
+.friends-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 16px 20px;
+  border: 0;
+  border-radius: 22px;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.friends-summary {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.friends-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+}
+.friends-sub {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.friends-chevron {
+  flex: none;
+  display: flex;
+  color: var(--muted);
+  transition: transform 200ms var(--ease-out);
+}
+.friends.open .friends-chevron {
+  transform: rotate(180deg);
+}
+
+.fw-avatars {
+  display: flex;
+  flex: none;
+}
+/* The circle itself, shared by every place a person shows up. `--size` comes
+   from the component; the initial scales with it, never under 11px. */
+.avatar {
+  position: relative;
+  width: var(--size, 28px);
+  height: var(--size, 28px);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: max(11px, calc(var(--size, 28px) * 0.43));
+  font-weight: 700;
+}
+.avatar-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+/* A photo that has just been chosen eases in over the one it replaces. */
+.avatar-img.fade {
+  animation: avatar-in 180ms var(--ease-out);
+}
+@keyframes avatar-in {
+  from {
+    opacity: 0;
+  }
+}
+.fw-avatars .avatar {
+  /* A ring in the card's colour separates the overlapping circles. */
+  box-shadow: 0 0 0 2px var(--card);
+}
+.fw-avatars .avatar + .avatar {
+  margin-left: -8px;
+}
+.avatar.fw-more {
+  background: var(--switch);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Collapse: the row track goes 0fr to 1fr instead of animating a height. The
+   hidden body is also taken out of the accessibility tree once it has folded. */
+.friends-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms var(--ease-out);
+}
+.friends.open .friends-body {
+  grid-template-rows: 1fr;
+}
+.friends-clip {
+  min-height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  transition: visibility 0s linear 220ms;
+}
+.friends.open .friends-clip {
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.fw-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+.fw-row {
+  display: grid;
+  grid-template-columns: 100px repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  align-items: center;
+}
+.fw-head {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--muted);
+}
+.fw-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.fw-alias {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.fw-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+/* The times are the signal; the green only backs them up. */
+.fw-bubble {
+  width: 100%;
+  max-width: 46px;
+  min-height: 36px;
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--ok-bg);
+  box-shadow: inset 0 0 0 1.5px var(--ok-line);
+  color: var(--ok);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+.fw-bubble.empty {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+/* Rows rise in once, when the table first mounts. They are keyed by friend,
+   so a refetch or a fold never replays this. */
+.fw-friend {
+  transition: opacity 280ms var(--ease-out), transform 280ms var(--ease-out);
+  transition-delay: calc(var(--i, 0) * 40ms);
+}
+@starting-style {
+  .fw-friend {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (max-width: 380px) {
+  .friends-head {
+    padding: 14px;
+  }
+  .fw-table {
+    padding: 0 12px 14px;
+  }
+  .fw-row {
+    grid-template-columns: 76px repeat(5, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .fw-name {
+    gap: 6px;
+  }
+  .fw-bubble {
+    font-size: 11px;
+  }
 }
 
 /* ---------- limit bubbles ---------- */
@@ -899,9 +1264,29 @@ button,
   .iconbtn:hover {
     filter: brightness(0.98);
   }
+  .friends-head:hover .friends-chevron {
+    color: var(--accent-ink);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Friends: the fold is instant, rows only fade, the dialog only fades. */
+  .friends-body,
+  .friends-clip,
+  .friends-chevron {
+    transition: none;
+  }
+  .fw-friend,
+  .friends-dialog {
+    transition: opacity 150ms linear;
+    transition-delay: 0ms;
+  }
+  @starting-style {
+    .fw-friend,
+    .friends-dialog {
+      transform: none;
+    }
+  }
   .press,
   .press:active,
   .toggle .knob,
@@ -916,7 +1301,8 @@ button,
     transition: opacity 150ms linear;
     transform: none;
   }
-  .skeleton {
+  .skeleton,
+  .avatar-img.fade {
     animation: none;
   }
 }
