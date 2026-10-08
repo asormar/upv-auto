@@ -153,6 +153,7 @@ export function FriendsWeek({
                           aria-label={`${row.alias}, ${COLUMNS[weekday].name}, de ${formatTime(range.start)} a ${formatTime(range.end)}`}
                         >
                           <span>{formatTime(range.start)}</span>
+                          <span className="fw-to" aria-hidden="true" />
                           <span>{formatTime(range.end)}</span>
                         </span>
                       ))
@@ -162,6 +163,7 @@ export function FriendsWeek({
               </div>
             ))}
           </div>
+          <p className="fw-legend">Cada cuadro es un tramo: de la hora de arriba a la de abajo.</p>
         </div>
       </div>
     </div>
