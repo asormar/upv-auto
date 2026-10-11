@@ -21,7 +21,12 @@ Algorithm:
      week's table. Only counted as booked if this run already followed a
      booking link for that exact code (a booking GET that may have timed
      out but succeeded server-side); otherwise it is retried next round.
-   - missing / UNAVAILABLE -> retried next round.
+   - UNAVAILABLE (listed, but without a booking link) -> retried next round.
+   - missing from a non-empty table -> retried next round, but after
+     `_MAX_MISSING_ROUNDS` consecutive rounds the slot is treated as gone
+     (e.g. a weekday hidden by a holiday) and the target moves on to its next
+     alternative; with none left it finishes unbooked. An empty table is
+     transient and never counts.
    - SANCTIONED (from `follow_booking`) -> UPV says the user cannot book:
      notify a summary and give up (1), no retries.
    - Still BOOKABLE right after following its own link counts as a refusal;
@@ -55,6 +60,10 @@ _FINE_STEP_SECONDS = 0.05
 # UPV may refuse a booking without saying so (the table just stays bookable).
 # This many refusals in a row, with no booking in between, and we stop.
 _MAX_CONSECUTIVE_REFUSALS = 3
+
+# A group absent from a non-empty table for this many rounds in a row is not
+# coming back this week (e.g. its weekday is hidden by a holiday).
+_MAX_MISSING_ROUNDS = 10
 
 
 class BookSlotUseCase:
@@ -166,7 +175,28 @@ class BookSlotUseCase:
                     slot = progress.current_slot
                     group = groups.get(slot.group_code)
 
-                    if group is None or group.state is GroupState.UNAVAILABLE:
+                    if group is None:
+                        if groups:  # an empty parse is transient and never counts
+                            progress.missing_rounds += 1
+                            if progress.missing_rounds >= _MAX_MISSING_ROUNDS:
+                                logger.info(
+                                    "Group %s missing from the table for %d rounds in a row",
+                                    slot.label,
+                                    progress.missing_rounds,
+                                )
+                                progress.index += 1
+                                progress.missing_rounds = 0
+                                progress.missing_seen = True
+                                just_followed = False
+                                if progress.is_finished:
+                                    break
+                                continue  # re-evaluate the new alternative against the same table
+                        needs_retry = True
+                        break
+
+                    progress.missing_rounds = 0
+
+                    if group.state is GroupState.UNAVAILABLE:
                         needs_retry = True
                         break
 
@@ -286,6 +316,11 @@ class BookSlotUseCase:
         for progress in progresses:
             if progress.booked:
                 lines.append(f"- {progress.target.label}: booked {progress.booked.label}")
+            elif progress.is_finished and progress.missing_seen:
+                lines.append(
+                    f"- {progress.target.label}: not booked; its group is not in the UPV table "
+                    "(the day may be hidden, e.g. a holiday)"
+                )
             elif progress.is_finished:
                 lines.append(f"- {progress.target.label}: all groups taken")
             elif progress.seen_enrolled:
@@ -306,6 +341,8 @@ class _TargetProgress:
         self.index = 0
         self.booked: Slot | None = None
         self.seen_enrolled = False
+        self.missing_rounds = 0  # consecutive rounds the current slot was absent from the table
+        self.missing_seen = False  # a slot was given up on because it never showed up
         self.attempted_codes: set[str] = set()
 
     @property

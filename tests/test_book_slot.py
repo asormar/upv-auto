@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from fakes import FakeActivityTableClient, FakeAuthenticator, FakeClock, FakeNotifier, FakeVerifier, error, expired, sanctioned, table
 
-from upv_auto.app.book_slot import _MAX_CONSECUTIVE_REFUSALS, BookSlotUseCase
+from upv_auto.app.book_slot import _MAX_CONSECUTIVE_REFUSALS, _MAX_MISSING_ROUNDS, BookSlotUseCase
 from upv_auto.config import AppConfig, UpvConfig, WindowConfig
 from upv_auto.domain.errors import AuthenticationFailed
 from upv_auto.domain.models import Activity, BookingTarget, Credentials, Slot
@@ -385,3 +385,93 @@ def test_a_booking_resets_the_refusal_counter():
     assert result == 0
     assert [call for call in table_client.calls if call == ("follow", "MUS074")] == [("follow", "MUS074")] * 4
     assert notifier.messages[-1].startswith("Booked 2/2: MUS075, MUS074")
+
+
+def test_a_group_missing_for_the_limit_of_rounds_is_dropped_without_waiting_for_the_window():
+    config = make_config(bookings=[BookingTarget((SLOT_A,))])
+    clock = FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ))
+    # A non-empty table that simply does not list MUS074 (its weekday is hidden).
+    table_client = FakeActivityTableClient(fetch_results=[table(MUS075="FULL") for _ in range(50)])
+    use_case, notifier, _ = build_use_case(config=config, clock=clock, table_client=table_client)
+
+    result = use_case.execute(skip_wait=True)
+
+    assert result == 1
+    assert fetch_calls(table_client) == _MAX_MISSING_ROUNDS == 10
+    assert clock.now() < datetime(2024, 1, 6, 10, 3, 0, tzinfo=TZ)  # ended early
+    assert len(notifier.messages) == 1
+    assert "not in the UPV table" in notifier.messages[0]
+    assert "all groups taken" not in notifier.messages[0]
+    assert "closed" not in notifier.messages[0].lower()
+
+
+def test_another_target_is_still_booked_while_the_first_one_counts_misses():
+    config = make_config(bookings=[BookingTarget((SLOT_A,)), BookingTarget((SLOT_B,))])
+    clock = FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ))
+    table_client = FakeActivityTableClient(
+        fetch_results=[table(MUS075="BOOKABLE")] + [table(MUS075="ENROLLED") for _ in range(20)],
+        follow_results={"MUS075": [table(MUS075="ENROLLED")]},
+    )
+    use_case, notifier, _ = build_use_case(config=config, clock=clock, table_client=table_client)
+
+    result = use_case.execute(skip_wait=True)
+
+    assert result == 1
+    assert table_client.calls.count(("follow", "MUS075")) == 1
+    summary = notifier.messages[-1]
+    assert summary.startswith("Booked 1/2: MUS075")
+    assert f"- {SLOT_A.label}: not booked; its group is not in the UPV table" in summary
+
+
+def test_the_missing_counter_resets_when_the_group_shows_up_again():
+    config = make_config(bookings=[BookingTarget((SLOT_A,))])
+    clock = FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ))
+    missing = table(MUS075="FULL")
+    almost = _MAX_MISSING_ROUNDS - 1
+    table_client = FakeActivityTableClient(
+        fetch_results=[
+            *[missing] * almost,
+            table(MUS074="UNAVAILABLE"),  # listed again: counter back to zero
+            *[missing] * almost,  # 18 misses in total, but never 10 in a row
+            table(MUS074="BOOKABLE"),
+        ],
+        follow_results={"MUS074": [table(MUS074="ENROLLED")]},
+    )
+    use_case, notifier, _ = build_use_case(config=config, clock=clock, table_client=table_client)
+
+    result = use_case.execute(skip_wait=True)
+
+    assert result == 0
+    assert notifier.messages[-1].startswith("Booked 1/1: MUS074")
+
+
+def test_an_empty_table_is_not_a_miss():
+    config = make_config(bookings=[BookingTarget((SLOT_A,))])
+    clock = FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ))
+    table_client = FakeActivityTableClient(
+        fetch_results=[*[table() for _ in range(_MAX_MISSING_ROUNDS * 2)], table(MUS074="BOOKABLE")],
+        follow_results={"MUS074": [table(MUS074="ENROLLED")]},
+    )
+    use_case, notifier, _ = build_use_case(config=config, clock=clock, table_client=table_client)
+
+    result = use_case.execute(skip_wait=True)
+
+    assert result == 0
+    assert notifier.messages[-1].startswith("Booked 1/1: MUS074")
+
+
+def test_the_next_alternative_is_tried_after_the_preferred_one_goes_missing():
+    config = make_config(bookings=[BookingTarget((SLOT_A, SLOT_B))])
+    clock = FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ))
+    table_client = FakeActivityTableClient(
+        fetch_results=[table(MUS075="BOOKABLE") for _ in range(_MAX_MISSING_ROUNDS)],
+        follow_results={"MUS075": [table(MUS075="ENROLLED")]},
+    )
+    use_case, notifier, _ = build_use_case(config=config, clock=clock, table_client=table_client)
+
+    result = use_case.execute(skip_wait=True)
+
+    assert result == 0
+    # The alternative is only booked once the preferred one has been missing 10 rounds.
+    assert table_client.calls == [("fetch",)] * _MAX_MISSING_ROUNDS + [("follow", "MUS075")]
+    assert notifier.messages[-1].startswith("Booked 1/1: MUS075")
