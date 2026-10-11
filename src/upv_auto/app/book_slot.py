@@ -22,6 +22,11 @@ Algorithm:
      booking link for that exact code (a booking GET that may have timed
      out but succeeded server-side); otherwise it is retried next round.
    - missing / UNAVAILABLE -> retried next round.
+   - SANCTIONED (from `follow_booking`) -> UPV says the user cannot book:
+     notify a summary and give up (1), no retries.
+   - Still BOOKABLE right after following its own link counts as a refusal;
+     `_MAX_CONSECUTIVE_REFUSALS` in a row (reset whenever a target is booked)
+     gives up (1) too, as it points to a sanction or a booking limit.
    - SESSION_EXPIRED (from either call) -> re-login at most once for the
      whole run; a second expiry gives up (1). A successful re-login ends
      the round early so the next one refetches from scratch.
@@ -46,6 +51,10 @@ logger = logging.getLogger(__name__)
 # coarse chunks; below it, switch to fine-grained polling.
 _COARSE_THRESHOLD_SECONDS = 5.0
 _FINE_STEP_SECONDS = 0.05
+
+# UPV may refuse a booking without saying so (the table just stays bookable).
+# This many refusals in a row, with no booking in between, and we stop.
+_MAX_CONSECUTIVE_REFUSALS = 3
 
 
 class BookSlotUseCase:
@@ -130,6 +139,7 @@ class BookSlotUseCase:
         finished: list[_TargetProgress] = []
         attempts = 0
         relogin_used = False
+        refusals = 0
 
         while pending and self._clock.now() < window.closes_at:
             snapshot = self._table_client.fetch_groups(session)
@@ -164,6 +174,7 @@ class BookSlotUseCase:
                         if slot.group_code in progress.attempted_codes:
                             logger.info("Booked %s after %d total attempt(s)", slot.label, attempts)
                             progress.booked = slot
+                            refusals = 0
                         else:
                             # The page has no week indicator: this enrolment may
                             # belong to last week's table, not something we did.
@@ -180,7 +191,15 @@ class BookSlotUseCase:
                         continue  # re-evaluate the new alternative against the same table
 
                     if just_followed:
-                        # Unexpected: still bookable right after following its own link.
+                        # Still bookable right after following its own link: refused.
+                        refusals += 1
+                        if refusals >= _MAX_CONSECUTIVE_REFUSALS:
+                            return self._give_up(
+                                finished,
+                                pending,
+                                f"UPV refused {refusals} booking attempts in a row "
+                                "(possibly a sanction or a booking limit). Stopped retrying.",
+                            )
                         needs_retry = True
                         break
 
@@ -195,6 +214,13 @@ class BookSlotUseCase:
                             return 1
                         interrupted = True
                         break
+
+                    if after.failure is BookingOutcome.SANCTIONED:
+                        return self._give_up(
+                            finished,
+                            pending,
+                            "UPV says you are sanctioned and cannot book. Stopped retrying.",
+                        )
 
                     if after.failure is BookingOutcome.ERROR:
                         needs_retry = True
@@ -220,6 +246,12 @@ class BookSlotUseCase:
         self._notifier.notify(self._summary(finished + pending, closed_note))
         logger.info("Booking finished after %d attempt(s)", attempts)
         return 0 if all(p.booked for p in finished + pending) else 1
+
+    def _give_up(self, finished: list[_TargetProgress], pending: list[_TargetProgress], note: str) -> int:
+        """Stop for this user: notify one summary with `note` and return the failure exit code."""
+        logger.error("Giving up: %s", note)
+        self._notifier.notify(self._summary(finished + pending, note))
+        return 1
 
     def _reauthenticate(
         self,

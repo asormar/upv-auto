@@ -86,6 +86,10 @@ def error(message: str = "boom") -> TableSnapshot:
     return TableSnapshot(failure=BookingOutcome.ERROR, message=message)
 
 
+def sanctioned() -> TableSnapshot:
+    return TableSnapshot(failure=BookingOutcome.SANCTIONED, message="UPV shows a sanction notice")
+
+
 class FakeActivityTableClient:
     """Replays scripted `TableSnapshot`s: a queue for `fetch_groups`, a per-code queue for `follow_booking`."""
 

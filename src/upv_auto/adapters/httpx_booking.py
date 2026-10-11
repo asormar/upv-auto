@@ -13,7 +13,9 @@ task notes for the HAR analysis):
    never hardcoded). UPV redirects that request back to the (now refreshed)
    activity table, so the response is parsed exactly like `fetch_groups` and
    returned as another `TableSnapshot` — the caller reuses it instead of
-   downloading the table again.
+   downloading the table again. If that response carries a sanction notice,
+   the snapshot is `SANCTIONED` instead (only checked here, never in
+   `fetch_groups`).
 
 Any response whose final URL host is the CAS host means the session has
 expired. Network errors, timeouts, 4xx and 5xx responses are mapped to
@@ -24,6 +26,7 @@ expired. Network errors, timeouts, 4xx and 5xx responses are mapped to
 from __future__ import annotations
 
 import logging
+import unicodedata
 from urllib.parse import urljoin
 
 import httpx
@@ -36,6 +39,16 @@ from upv_auto.domain.models import Activity, BookingOutcome, GroupAvailability, 
 logger = logging.getLogger(__name__)
 
 RESPONSE_ENCODING = "iso-8859-15"
+
+# Stem of "sancionado"/"sancionat"/"sanción", compared accent- and case-insensitively.
+_SANCTION_STEM = "sancion"
+
+
+def _mentions_sanction(html: str) -> bool:
+    """True if the page contains the sanction stem (accents and case ignored)."""
+    decomposed = unicodedata.normalize("NFKD", html)
+    plain = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return _SANCTION_STEM in plain.casefold()
 
 
 class HttpxActivityTableClient:
@@ -80,6 +93,10 @@ class HttpxActivityTableClient:
         response, failure = self._get(client, booking_url)
         if failure is not None:
             return failure
+        if _mentions_sanction(response.text):
+            # Fixed message only: the page text never goes into the (public) logs.
+            logger.warning("UPV answered the booking request with a sanction notice")
+            return TableSnapshot(failure=BookingOutcome.SANCTIONED, message="UPV shows a sanction notice")
         return TableSnapshot(groups=parse_groups(response.text))
 
     def _client_for(self, session: Session) -> httpx.Client:

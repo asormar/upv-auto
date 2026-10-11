@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
+from pathlib import Path
 from unittest.mock import patch
 
 import httpx
+import pytest
 
 from upv_auto.adapters.httpx_booking import HttpxActivityTableClient
 from upv_auto.adapters.httpx_session import build_client as real_build_client
@@ -20,6 +23,9 @@ BOOKING_PATH = (
     "&p_vista=intranet&p_tipoact=6894&p_idioma=c"
 )
 BOOKING_URL = BASE_URL + BOOKING_PATH
+
+# A normal (non-sanctioned) table page, stored as UTF-8 in this repo.
+NORMAL_PAGE = (Path(__file__).parent / "fixtures" / "activities_musculacion.html").read_text(encoding="utf-8")
 
 
 def _cell(code: str, *, state: str, extra: str = "", href: str | None = None) -> str:
@@ -182,3 +188,49 @@ def test_close_and_context_manager_release_the_client():
         client.fetch_groups(make_session())
         assert client._client is not None
     assert client._client is None
+
+
+@pytest.mark.parametrize(
+    "notice",
+    [
+        "Usted esta sancionado y no podra realizar ninguna inscripcion.",
+        "L'usuari està sancionat i no pot fer cap inscripció.",
+        "SANCIÓN ACTIVA",
+    ],
+)
+def test_follow_booking_with_a_sanction_notice_is_sanctioned(notice, caplog):
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = table_page(f"<td>{notice}</td>") + bookable_table()
+        return httpx.Response(200, content=page.encode("iso-8859-15"))  # UPV's real encoding
+
+    client = make_client(handler)
+    group = GroupAvailability(code="MUS074", state=GroupState.BOOKABLE, booking_path=BOOKING_PATH)
+
+    with caplog.at_level(logging.DEBUG, logger="upv_auto.adapters.httpx_booking"):
+        snapshot = client.follow_booking(make_session(), group)
+
+    assert snapshot.failure is BookingOutcome.SANCTIONED
+    assert snapshot.groups is None
+    assert "sancion" not in caplog.text.lower()  # the page text never reaches the logs
+
+
+def test_follow_booking_on_a_normal_page_is_not_sanctioned():
+    client = make_client(lambda request: httpx.Response(200, text=NORMAL_PAGE))
+    group = GroupAvailability(code="MUS074", state=GroupState.BOOKABLE, booking_path=BOOKING_PATH)
+
+    snapshot = client.follow_booking(make_session(), group)
+
+    assert snapshot.failure is None
+    assert snapshot.ok
+
+
+def test_fetch_groups_never_looks_for_a_sanction_notice():
+    client = make_client(lambda request: httpx.Response(200, text=NORMAL_PAGE))
+    assert client.fetch_groups(make_session()).ok
+
+    page_with_notice = bookable_table() + "<p>sancionado</p>"
+    client = make_client(lambda request: httpx.Response(200, text=page_with_notice))
+    snapshot = client.fetch_groups(make_session())
+
+    assert snapshot.ok
+    assert snapshot.failure is None

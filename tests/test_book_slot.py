@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fakes import FakeActivityTableClient, FakeAuthenticator, FakeClock, FakeNotifier, FakeVerifier, error, expired, table
+from fakes import FakeActivityTableClient, FakeAuthenticator, FakeClock, FakeNotifier, FakeVerifier, error, expired, sanctioned, table
 
-from upv_auto.app.book_slot import BookSlotUseCase
+from upv_auto.app.book_slot import _MAX_CONSECUTIVE_REFUSALS, BookSlotUseCase
 from upv_auto.config import AppConfig, UpvConfig, WindowConfig
 from upv_auto.domain.errors import AuthenticationFailed
 from upv_auto.domain.models import Activity, BookingTarget, Credentials, Slot
@@ -321,3 +321,67 @@ def test_an_empty_queue_never_logs_in():
     assert exit_code == 0
     assert authenticator.calls == 0
     assert "Nothing queued" in notifier.messages[0]
+
+
+def test_sanctioned_user_gives_up_at_once_without_retrying():
+    config = make_config(bookings=[BookingTarget((SLOT_A,)), BookingTarget((SLOT_B,))])
+    clock = FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ))
+    table_client = FakeActivityTableClient(
+        fetch_results=[table(MUS074="BOOKABLE", MUS075="BOOKABLE")],
+        follow_results={"MUS074": [sanctioned()]},
+    )
+    use_case, notifier, authenticator = build_use_case(config=config, clock=clock, table_client=table_client)
+
+    result = use_case.execute(skip_wait=True)
+
+    assert result == 1
+    assert table_client.calls == [("fetch",), ("follow", "MUS074")]  # nothing after the sanction
+    assert clock.sleep_calls == []
+    assert authenticator.calls == 1  # no re-login
+    assert len(notifier.messages) == 1
+    assert notifier.messages[0].startswith("Booked 0/2: none")
+    assert "sanctioned and cannot book. Stopped retrying." in notifier.messages[0]
+
+
+def test_consecutive_refusals_give_up_after_exactly_the_limit():
+    config = make_config(bookings=[BookingTarget((SLOT_A,))])
+    clock = FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ))
+    # UPV keeps answering with the table where the group is still bookable.
+    table_client = FakeActivityTableClient(
+        fetch_results=[table(MUS074="BOOKABLE") for _ in range(10)],
+        follow_results={"MUS074": [table(MUS074="BOOKABLE") for _ in range(10)]},
+    )
+    use_case, notifier, _ = build_use_case(config=config, clock=clock, table_client=table_client)
+
+    result = use_case.execute(skip_wait=True)
+
+    assert result == 1
+    follows = [call for call in table_client.calls if call[0] == "follow"]
+    assert len(follows) == _MAX_CONSECUTIVE_REFUSALS == 3
+    assert len(notifier.messages) == 1
+    assert notifier.messages[0].startswith("Booked 0/1: none")
+    assert "refused 3 booking attempts in a row" in notifier.messages[0]
+    assert not any("closed" in m.lower() for m in notifier.messages)
+
+
+def test_a_booking_resets_the_refusal_counter():
+    config = make_config(bookings=[BookingTarget((SLOT_A,)), BookingTarget((SLOT_B,))])
+    clock = FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ))
+    both = table(MUS074="BOOKABLE", MUS075="BOOKABLE")
+    only_a = table(MUS074="BOOKABLE", MUS075="ENROLLED")
+    table_client = FakeActivityTableClient(
+        fetch_results=[both, only_a, only_a, only_a],
+        follow_results={
+            # Refusal 1 in round 1, then MUS075 gets booked (counter reset), then
+            # two more refusals: 3 refusals in total but never 3 in a row.
+            "MUS074": [both, only_a, only_a, table(MUS074="ENROLLED", MUS075="ENROLLED")],
+            "MUS075": [only_a],
+        },
+    )
+    use_case, notifier, _ = build_use_case(config=config, clock=clock, table_client=table_client)
+
+    result = use_case.execute(skip_wait=True)
+
+    assert result == 0
+    assert [call for call in table_client.calls if call == ("follow", "MUS074")] == [("follow", "MUS074")] * 4
+    assert notifier.messages[-1].startswith("Booked 2/2: MUS075, MUS074")

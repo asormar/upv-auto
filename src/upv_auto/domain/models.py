@@ -95,6 +95,7 @@ class BookingOutcome(Enum):
 
     SESSION_EXPIRED = auto()
     ERROR = auto()
+    SANCTIONED = auto()  # UPV's booking response shows a sanction notice
 
 
 @dataclass(frozen=True)
@@ -102,7 +103,7 @@ class TableSnapshot:
     """Result of reading the activity table: parsed groups, or why it could not be read."""
 
     groups: dict[str, GroupAvailability] | None = None
-    failure: BookingOutcome | None = None  # only SESSION_EXPIRED or ERROR
+    failure: BookingOutcome | None = None  # SESSION_EXPIRED, ERROR or SANCTIONED
     message: str = ""
 
     @property
