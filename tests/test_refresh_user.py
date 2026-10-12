@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 from fakes import FakeActivityTableClient, FakeAuthenticator, FakeClock, FakeNotifier, FakeVerifier, error, table
 
-from upv_auto.__main__ import main
+from upv_auto.__main__ import _sync_settings, main
 from upv_auto.app.refresh_user import refresh_user
 from upv_auto.config import AppConfig, UpvConfig, WindowConfig
 from upv_auto.domain.errors import CredentialsUnavailable
@@ -227,3 +227,86 @@ def test_missing_stored_credentials_finishes_the_request():
 
     assert result == 1
     assert directory.finished == [(REQUEST_ID, False, "credentials_unavailable")]
+
+
+class SaveFailsDirectory(FakeUserDirectory):
+    def save_schedule(self, user_id: str, groups) -> None:
+        raise RuntimeError("PostgREST 500")
+
+
+def test_a_failed_save_finishes_the_request_as_failed_instead_of_raising():
+    directory = SaveFailsDirectory(job=make_job())
+
+    result = refresh_user(
+        REQUEST_ID,
+        base_config(),
+        directory,
+        WorkingOpener(),
+        FakeAuthenticator(),
+        FakeVerifier(valid=True),
+        FakeNotifier(),
+        FakeClock(datetime(2024, 1, 6, 9, 0, 0, tzinfo=TZ)),
+        FakeActivityTableClient(fetch_results=[table(MUS074="BOOKABLE")]),
+    )
+
+    assert result == 1
+    assert directory.finished == [(REQUEST_ID, False, "error")]
+
+
+class SaveAndFinishFailDirectory(SaveFailsDirectory):
+    def finish_request(self, request_id: str, ok: bool, error_code: str | None) -> None:
+        raise RuntimeError("PostgREST down")
+
+
+def test_a_failing_finish_request_is_logged_and_never_raised():
+    directory = SaveAndFinishFailDirectory(job=make_job())
+
+    result = refresh_user(
+        REQUEST_ID,
+        base_config(),
+        directory,
+        WorkingOpener(),
+        FakeAuthenticator(),
+        FakeVerifier(valid=True),
+        FakeNotifier(),
+        FakeClock(datetime(2024, 1, 6, 9, 0, 0, tzinfo=TZ)),
+        FakeActivityTableClient(fetch_results=[table(MUS074="BOOKABLE")]),
+    )
+
+    assert result == 1
+    assert directory.finished == []
+
+
+class ClaimFailsDirectory(FakeUserDirectory):
+    def claim_request(self, request_id: str) -> RefreshJob | None:
+        raise RuntimeError("PostgREST 500")
+
+
+def test_a_failing_claim_finishes_the_request_as_failed_instead_of_raising():
+    directory = ClaimFailsDirectory(job=None)
+
+    result = refresh_user(
+        REQUEST_ID,
+        base_config(),
+        directory,
+        WorkingOpener(),
+        FakeAuthenticator(),
+        FakeVerifier(valid=True),
+        FakeNotifier(),
+        FakeClock(datetime(2024, 1, 6, 9, 0, 0, tzinfo=TZ)),
+        FakeActivityTableClient(fetch_results=[]),
+    )
+
+    assert result == 1
+    assert directory.finished == [(REQUEST_ID, False, "error")]
+
+
+def test_a_failing_settings_sync_only_logs_a_warning(caplog):
+    class SettingsFail:
+        def upsert_settings(self, settings: dict) -> None:
+            raise RuntimeError("PostgREST 500")
+
+    with caplog.at_level("WARNING"):
+        _sync_settings(SettingsFail(), base_config())  # must not raise
+
+    assert "Could not sync app_settings" in caplog.text

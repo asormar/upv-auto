@@ -78,23 +78,27 @@ def run_batch(
     def worker(user: UserRecord, index: int) -> None:
         nonlocal all_ok
         notifier = BufferedNotifier()
-        ok = _process_user(
-            user,
-            index,
-            total,
-            notifier=notifier,
-            config=config,
-            directory=directory,
-            credential_opener=credential_opener,
-            scheduler=scheduler,
-            clock=clock,
-            authenticator_factory=authenticator_factory,
-            verifier_factory=verifier_factory,
-            table_client_factory=table_client_factory,
-            run_id=run_id,
-            skip_wait=skip_wait,
-            on_credentials_opened=on_credentials_opened,
-        )
+        ok = False
+        try:
+            ok = _process_user(
+                user,
+                index,
+                total,
+                notifier=notifier,
+                config=config,
+                directory=directory,
+                credential_opener=credential_opener,
+                scheduler=scheduler,
+                clock=clock,
+                authenticator_factory=authenticator_factory,
+                verifier_factory=verifier_factory,
+                table_client_factory=table_client_factory,
+                run_id=run_id,
+                skip_wait=skip_wait,
+                on_credentials_opened=on_credentials_opened,
+            )
+        except Exception as exc:  # last resort: a crashed worker still counts as a failed user
+            logger.error("user %d/%d: worker crashed: %s", index, total, type(exc).__name__)
         with lock:
             notifiers[user.user_id] = notifier
             if not ok:
@@ -111,9 +115,13 @@ def run_batch(
 
     # SMTP happens here, sequentially, one real send per user, entirely
     # outside the turn-taking window (design.md's "Notification" decision).
-    for user in roster:
+    for index, user in enumerate(roster, start=1):
+        buffered = notifiers.get(user.user_id)
+        if buffered is None:
+            logger.error("user %d/%d: no outcome to email", index, total)
+            continue
         try:
-            notifier_factory(user).notify(notifiers[user.user_id].combined())
+            notifier_factory(user).notify(buffered.combined())
         except Exception as exc:  # a failed send must not hide the others
             logger.error("Failed to send the batch email for one user: %s", type(exc).__name__)
 
@@ -138,7 +146,10 @@ def _process_user(
     skip_wait: bool,
     on_credentials_opened: OnCredentialsOpened | None,
 ) -> bool:
-    """Process one user's turn end to end. Always records a result; never raises.
+    """Process one user's turn end to end. Always tries to record a result; never raises.
+
+    A result that cannot be recorded (e.g. a Supabase error) is logged and
+    makes the user count as failed, so the run exits non-zero.
 
     `label` names the user only as an opaque index (platform-operations
     spec's "Public Log Hygiene"): logs never carry `user.user_id` or
@@ -195,5 +206,9 @@ def _process_user(
         scheduler.finish(user.user_id)
 
     logger.info("%s: finished with status %s", label, status)
-    directory.record_result(user.user_id, run_id, status, notifier.combined())
+    try:
+        directory.record_result(user.user_id, run_id, status, notifier.combined())
+    except Exception as exc:  # the booking already happened; losing its record is still a failed run
+        logger.error("%s: could not record the result: %s", label, type(exc).__name__)
+        return False
     return ok

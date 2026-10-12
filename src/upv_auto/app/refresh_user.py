@@ -51,9 +51,11 @@ def refresh_user(
     """Fetch and cache one user's schedule for an already-claimed refresh request.
 
     Returns 0 on success, 1 otherwise. Never raises: every outcome —
-    including one this function did not anticipate — ends by calling
-    `directory.finish_request(...)`, so the frontend's Realtime hook
-    (`useRefreshStatus.ts`) never sees a request stuck `pending` forever.
+    including one this function did not anticipate, such as a failing
+    Supabase call — ends by calling `directory.finish_request(...)`, so the
+    frontend's Realtime hook (`useRefreshStatus.ts`) never sees a request
+    stuck `pending` forever. If `finish_request` itself fails there is
+    nothing left to try: it is logged and the request expires on its own.
 
     `on_credentials_opened` mirrors `app.run_batch`'s hook of the same name:
     called the moment credentials are unsealed, before any login attempt, so
@@ -68,7 +70,11 @@ def refresh_user(
         # reach this before the credentials form is submitted). Close the
         # request so the web stops showing a pending refresh.
         logger.warning("No stored credentials for this refresh request")
-        directory.finish_request(request_id, ok=False, error_code="credentials_unavailable")
+        _finish(directory, request_id, ok=False, error_code="credentials_unavailable")
+        return 1
+    except Exception as exc:  # e.g. a PostgREST error: the request is still ours to close
+        logger.error("Could not claim the refresh request: %s", type(exc).__name__)
+        _finish(directory, request_id, ok=False, error_code="error")
         return 1
     if job is None:
         logger.error("Refresh request not found or already finished")
@@ -78,7 +84,7 @@ def refresh_user(
         credentials = credential_opener.open(job.sealed_credentials, job.key_id)
     except CredentialsUnavailable:
         logger.warning("Could not unseal credentials for this refresh request")
-        directory.finish_request(request_id, ok=False, error_code="credentials_unavailable")
+        _finish(directory, request_id, ok=False, error_code="credentials_unavailable")
         return 1
 
     if on_credentials_opened is not None:
@@ -101,7 +107,7 @@ def refresh_user(
         )
     except Exception as exc:  # one user's refresh must never crash the runner
         logger.error("Unexpected error while refreshing: %s", type(exc).__name__)
-        directory.finish_request(request_id, ok=False, error_code="error")
+        _finish(directory, request_id, ok=False, error_code="error")
         return 1
 
     if groups is None:
@@ -109,10 +115,27 @@ def refresh_user(
         # as "the UPV is down, we will retry".
         reason = login_failure[0] if login_failure else ""
         error_code = "credentials_rejected" if reason in ("rejected", "blocked") else "fetch_failed"
-        directory.finish_request(request_id, ok=False, error_code=error_code)
+        _finish(directory, request_id, ok=False, error_code=error_code)
         return 1
 
-    directory.save_schedule(job.user_id, groups)
-    directory.finish_request(request_id, ok=True, error_code=None)
+    try:
+        directory.save_schedule(job.user_id, groups)
+    except Exception as exc:  # the fetch worked but caching it did not: report a failed refresh
+        logger.error("Could not cache the schedule: %s", type(exc).__name__)
+        _finish(directory, request_id, ok=False, error_code="error")
+        return 1
+
+    if not _finish(directory, request_id, ok=True, error_code=None):
+        return 1
     logger.info("Refresh finished: schedule cached")
     return 0
+
+
+def _finish(directory: UserDirectory, request_id: str, *, ok: bool, error_code: str | None) -> bool:
+    """Close the request without ever raising. Returns whether it was actually closed."""
+    try:
+        directory.finish_request(request_id, ok=ok, error_code=error_code)
+    except Exception as exc:
+        logger.error("Could not finish the refresh request: %s", type(exc).__name__)
+        return False
+    return True

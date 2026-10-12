@@ -188,6 +188,19 @@ def _settings_payload(config: AppConfig) -> dict:
     }
 
 
+def _sync_settings(directory, config: AppConfig) -> None:
+    """Publish `config` to `app_settings`, best effort.
+
+    The web only uses it to show the activity header and limits, and the real
+    work (booking, refreshing) does not depend on it, so a Supabase error here
+    is a warning rather than a reason to abort the run.
+    """
+    try:
+        directory.upsert_settings(_settings_payload(config))
+    except Exception as exc:
+        logger.warning("Could not sync app_settings (continuing): %s", type(exc).__name__)
+
+
 def _seal_keygen(args: argparse.Namespace) -> int:
     """Generate a fresh sealed-box key pair (credential-custody spec: "Key Rotation
     Invalidates Stored Credentials"). Prints the values to wire up by hand: the
@@ -256,7 +269,7 @@ def _book_all(args: argparse.Namespace) -> int:
     clock = SystemClock(timezone=config.timezone)
 
     with SupabaseRestUserDirectory(supabase_url, service_role_key) as directory:
-        directory.upsert_settings(_settings_payload(config))
+        _sync_settings(directory, config)
         return run_batch(
             config,
             directory,
@@ -325,7 +338,7 @@ def _refresh(args: argparse.Namespace) -> int:
         # Same sync as `book-all`: without it the frontend falls back to an
         # empty activity (an "Campus" header with no name) until the first
         # Saturday batch ever runs.
-        directory.upsert_settings(_settings_payload(config))
+        _sync_settings(directory, config)
         with HttpxActivityTableClient(activity=config.activity) as table_client:
             authenticator = PlaywrightCasAuthenticator(entry_url=config.upv.entry_url)
             verifier = HttpxSessionVerifier(session_check_url=config.upv.session_check_url)

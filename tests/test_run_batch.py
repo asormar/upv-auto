@@ -216,3 +216,42 @@ def test_credentials_unavailable_is_isolated_and_recorded():
     assert result == 1
     statuses = {user_id: status for user_id, _, status, _ in directory.results}
     assert statuses == {"u-good": "booked", "u-bad": "credentials_unavailable"}
+
+
+def test_a_result_that_cannot_be_recorded_fails_the_run_but_not_the_other_users(caplog):
+    class RecordFailsForB(FakeUserDirectory):
+        def record_result(self, user_id: str, run_id: str, status: str, summary: str) -> None:
+            if user_id == "u-b":
+                raise RuntimeError("PostgREST 500 for u-b@example.test")
+            super().record_result(user_id, run_id, status, summary)
+
+    users = [make_user("u-a", "a"), make_user("u-b", "b")]
+    directory = RecordFailsForB(users)
+    sent: dict[str, FakeNotifier] = {}
+
+    def notifier_factory(user: UserRecord) -> FakeNotifier:
+        notifier = FakeNotifier()
+        sent[user.user_id] = notifier
+        return notifier
+
+    with caplog.at_level("ERROR"):
+        result = run_batch(
+            base_config(),
+            directory,
+            FakeCredentialOpener(),
+            *make_factories(),
+            notifier_factory,
+            FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ)),
+            RUN_ID,
+            skip_wait=True,
+        )
+
+    assert result == 1  # the lost record must not look like a clean run
+    assert [user_id for user_id, *_ in directory.results] == ["u-a"]
+    # Both users still get their email: the booking outcome does not depend on the record.
+    assert set(sent) == {"u-a", "u-b"}
+    assert sent["u-b"].messages and sent["u-a"].messages
+    assert "Failed to send the batch email" not in caplog.text
+    # The log names the user only by an opaque index, and never echoes the error text.
+    assert "could not record the result: RuntimeError" in caplog.text
+    assert "u-b" not in caplog.text and "example.test" not in caplog.text
