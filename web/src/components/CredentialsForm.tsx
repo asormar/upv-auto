@@ -32,6 +32,8 @@ export function CredentialsForm({
   onCancel,
   title = "Tus credenciales de la UPV",
   submitLabel = "Guardar credenciales",
+  headingLevel: Heading = "h1",
+  headingId,
 }: {
   onSaved: () => void;
   /** Only passed when the form is reopened to replace credentials that are
@@ -39,6 +41,10 @@ export function CredentialsForm({
   onCancel?: () => void;
   title?: string;
   submitLabel?: string;
+  /** "h2" when the form sits inside a dialog that already sits under the page's h1. */
+  headingLevel?: "h1" | "h2";
+  /** For the dialog's `aria-labelledby`. */
+  headingId?: string;
 }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -66,7 +72,9 @@ export function CredentialsForm({
 
   return (
     <form className="authgate-form" onSubmit={submit}>
-      <h1 className="authgate-title">{title}</h1>
+      <Heading className="authgate-title" id={headingId}>
+        {title}
+      </Heading>
       <p className="authgate-hint authgate-hint-seal">
         <Shield size={14} />
         Se sellan en tu navegador con una clave pública antes de enviarse. Solo la clave privada
@@ -76,10 +84,14 @@ export function CredentialsForm({
         <span>Usuario UPV</span>
         {/* Phone keyboards capitalise the first letter and autocorrect the
             rest by default, which silently turns a valid UPV user into one
-            CAS rejects. */}
+            CAS rejects. No `username` / `current-password` autocomplete
+            tokens here (or below): they are what the Supabase sign-in uses,
+            so a password manager would fill or overwrite that login with the
+            UPV one. `off` is often ignored on password fields; `new-password`
+            is respected. */}
         <input
           type="text"
-          autoComplete="username"
+          autoComplete="off"
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
@@ -93,7 +105,7 @@ export function CredentialsForm({
         <div className="field-control">
           <input
             type={reveal ? "text" : "password"}
-            autoComplete="current-password"
+            autoComplete="new-password"
             required
             value={password}
             onChange={(event) => setPassword(event.target.value)}

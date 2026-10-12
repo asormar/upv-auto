@@ -74,6 +74,7 @@ export function DayRail({ slots, busy, limitReached, closed, notice, onToggle }:
                 ? "open"
                 : "dim";
           const blocked = !mine && (limitReached || closed);
+          const action = mine ? "Quitar" : slot.state === "ENROLLED" ? "Reservar de nuevo" : "Reservar";
 
           return (
             <div className={`slot ${tone}`} key={slot.code}>
@@ -106,6 +107,8 @@ export function DayRail({ slots, busy, limitReached, closed, notice, onToggle }:
                     // The strong accent is for hours you can actually take now;
                     // queueing a full hour is still allowed, just quieter.
                     className={`cta press ${mine || !open ? "ghost" : ""}`.trim()}
+                    // Every row says the same verb: the hour tells a screen reader which.
+                    aria-label={slot.time ? `${action} ${slot.time.replace("-", "–")}` : undefined}
                     onClick={() => onToggle(slot)}
                     disabled={busy || blocked}
                     title={
@@ -117,11 +120,7 @@ export function DayRail({ slots, busy, limitReached, closed, notice, onToggle }:
                     }
                   >
                     {mine ? <Minus /> : <Plus />}
-                    {mine
-                      ? "Quitar"
-                      : slot.state === "ENROLLED"
-                        ? "Reservar de nuevo"
-                        : "Reservar"}
+                    {action}
                   </button>
                 </span>
               </div>
