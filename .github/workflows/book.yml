@@ -85,12 +85,14 @@ jobs:
           # Inputs go through env vars, never interpolated into the script (avoids injection).
           MODE: ${{ inputs.mode }}
           NOW: ${{ inputs.now }}
-          GROUPS: ${{ inputs.groups }}
+          # Not called GROUPS: that is a special bash variable (the user's
+          # group ids), so an env value of that name is ignored.
+          BOOK_GROUPS: ${{ inputs.groups }}
         run: |
           args=("$MODE")
           if [ "$MODE" = "book" ]; then
             [ "$NOW" = "true" ] && args+=(--now)
-            for code in $GROUPS; do args+=(--group "$code"); done
+            for code in $BOOK_GROUPS; do args+=(--group "$code"); done
           elif [ "$MODE" = "book-all" ]; then
             [ "$NOW" = "true" ] && args+=(--now)
           fi
