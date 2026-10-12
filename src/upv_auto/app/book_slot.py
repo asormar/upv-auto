@@ -29,9 +29,11 @@ Algorithm:
      transient and never counts.
    - SANCTIONED (from `follow_booking`) -> UPV says the user cannot book:
      notify a summary and give up (1), no retries.
-   - Still BOOKABLE right after following its own link counts as a refusal;
-     `_MAX_CONSECUTIVE_REFUSALS` in a row (reset whenever a target is booked)
-     gives up (1) too, as it points to a sanction or a booking limit.
+   - Still BOOKABLE right after following its own link counts as a refusal,
+     tracked per target (one lagging table must not add up across targets);
+     `_MAX_CONSECUTIVE_REFUSALS` in a row for the same target (reset when it
+     moves to another alternative) gives up for the whole user (1), as it
+     points to a sanction or a booking limit.
    - SESSION_EXPIRED (from either call) -> re-login at most once for the
      whole run; a second expiry gives up (1). A successful re-login ends
      the round early so the next one refetches from scratch.
@@ -58,7 +60,8 @@ _COARSE_THRESHOLD_SECONDS = 5.0
 _FINE_STEP_SECONDS = 0.05
 
 # UPV may refuse a booking without saying so (the table just stays bookable).
-# This many refusals in a row, with no booking in between, and we stop.
+# This many refusals in a row for the same target, without it moving on to
+# another alternative, and we stop for the whole user.
 _MAX_CONSECUTIVE_REFUSALS = 3
 
 # A group absent from a non-empty table for this many rounds in a row is not
@@ -148,7 +151,6 @@ class BookSlotUseCase:
         finished: list[_TargetProgress] = []
         attempts = 0
         relogin_used = False
-        refusals = 0
 
         while pending and self._clock.now() < window.closes_at:
             snapshot = self._table_client.fetch_groups(session)
@@ -186,6 +188,7 @@ class BookSlotUseCase:
                                 )
                                 progress.index += 1
                                 progress.missing_rounds = 0
+                                progress.refusals = 0
                                 progress.missing_seen = True
                                 just_followed = False
                                 if progress.is_finished:
@@ -204,7 +207,7 @@ class BookSlotUseCase:
                         if slot.group_code in progress.attempted_codes:
                             logger.info("Booked %s after %d total attempt(s)", slot.label, attempts)
                             progress.booked = slot
-                            refusals = 0
+                            progress.refusals = 0
                         else:
                             # The page has no week indicator: this enrolment may
                             # belong to last week's table, not something we did.
@@ -215,6 +218,8 @@ class BookSlotUseCase:
                     if group.state is GroupState.FULL:
                         logger.info("Group %s is full", slot.label)
                         progress.index += 1
+                        progress.refusals = 0
+                        progress.missing_seen = False  # the target now ends because of a full group
                         just_followed = False
                         if progress.is_finished:
                             break
@@ -222,12 +227,12 @@ class BookSlotUseCase:
 
                     if just_followed:
                         # Still bookable right after following its own link: refused.
-                        refusals += 1
-                        if refusals >= _MAX_CONSECUTIVE_REFUSALS:
+                        progress.refusals += 1
+                        if progress.refusals >= _MAX_CONSECUTIVE_REFUSALS:
                             return self._give_up(
                                 finished,
                                 pending,
-                                f"UPV refused {refusals} booking attempts in a row "
+                                f"UPV refused {progress.refusals} booking attempts in a row "
                                 "(possibly a sanction or a booking limit). Stopped retrying.",
                             )
                         needs_retry = True
@@ -342,7 +347,8 @@ class _TargetProgress:
         self.booked: Slot | None = None
         self.seen_enrolled = False
         self.missing_rounds = 0  # consecutive rounds the current slot was absent from the table
-        self.missing_seen = False  # a slot was given up on because it never showed up
+        self.missing_seen = False  # the last slot was given up on because it never showed up
+        self.refusals = 0  # consecutive refusals of the current slot (UPV left it bookable after its link)
         self.attempted_codes: set[str] = set()
 
     @property

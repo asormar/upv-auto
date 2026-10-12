@@ -364,18 +364,18 @@ def test_consecutive_refusals_give_up_after_exactly_the_limit():
     assert not any("closed" in m.lower() for m in notifier.messages)
 
 
-def test_a_booking_resets_the_refusal_counter():
-    config = make_config(bookings=[BookingTarget((SLOT_A,)), BookingTarget((SLOT_B,))])
+def test_moving_to_another_alternative_resets_the_refusal_counter():
+    config = make_config(bookings=[BookingTarget((SLOT_A, SLOT_B))])
     clock = FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ))
-    both = table(MUS074="BOOKABLE", MUS075="BOOKABLE")
-    only_a = table(MUS074="BOOKABLE", MUS075="ENROLLED")
+    a_open = table(MUS074="BOOKABLE", MUS075="BOOKABLE")
+    a_full = table(MUS074="FULL", MUS075="BOOKABLE")
     table_client = FakeActivityTableClient(
-        fetch_results=[both, only_a, only_a, only_a],
+        # Two refusals on MUS074, then it fills up; two more on MUS075 and it gets booked:
+        # 4 refusals in total, but never 3 in a row on the same group.
+        fetch_results=[a_open, a_open, a_full, a_full, a_full],
         follow_results={
-            # Refusal 1 in round 1, then MUS075 gets booked (counter reset), then
-            # two more refusals: 3 refusals in total but never 3 in a row.
-            "MUS074": [both, only_a, only_a, table(MUS074="ENROLLED", MUS075="ENROLLED")],
-            "MUS075": [only_a],
+            "MUS074": [a_open, a_open],
+            "MUS075": [a_full, a_full, table(MUS074="FULL", MUS075="ENROLLED")],
         },
     )
     use_case, notifier, _ = build_use_case(config=config, clock=clock, table_client=table_client)
@@ -383,8 +383,47 @@ def test_a_booking_resets_the_refusal_counter():
     result = use_case.execute(skip_wait=True)
 
     assert result == 0
-    assert [call for call in table_client.calls if call == ("follow", "MUS074")] == [("follow", "MUS074")] * 4
-    assert notifier.messages[-1].startswith("Booked 2/2: MUS075, MUS074")
+    assert table_client.calls.count(("follow", "MUS074")) == 2
+    assert table_client.calls.count(("follow", "MUS075")) == 3
+    assert notifier.messages[-1].startswith("Booked 1/1: MUS075")
+
+
+def test_refusals_are_counted_per_target_not_across_targets():
+    config = make_config(
+        bookings=[BookingTarget((SLOT_A,)), BookingTarget((SLOT_B,)), BookingTarget((SLOT_C,))]
+    )
+    clock = FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ))
+    all_open = table(MUS074="BOOKABLE", MUS075="BOOKABLE", MUS037="BOOKABLE")
+    # The table lags once for every target: each one is refused a single time, then booked.
+    table_client = FakeActivityTableClient(
+        fetch_results=[all_open, all_open],
+        follow_results={
+            "MUS074": [all_open, table(MUS074="ENROLLED", MUS075="BOOKABLE", MUS037="BOOKABLE")],
+            "MUS075": [all_open, table(MUS074="ENROLLED", MUS075="ENROLLED", MUS037="BOOKABLE")],
+            "MUS037": [all_open, table(MUS074="ENROLLED", MUS075="ENROLLED", MUS037="ENROLLED")],
+        },
+    )
+    use_case, notifier, _ = build_use_case(config=config, clock=clock, table_client=table_client)
+
+    result = use_case.execute(skip_wait=True)
+
+    assert result == 0
+    assert len(notifier.messages) == 1
+    assert notifier.messages[0].startswith("Booked 3/3: MUS074, MUS075, MUS037")
+    assert "refused" not in notifier.messages[0]
+
+
+def test_a_full_group_after_a_missing_one_is_not_reported_as_missing():
+    config = make_config(bookings=[BookingTarget((SLOT_A, SLOT_B))])
+    clock = FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ))
+    table_client = FakeActivityTableClient(fetch_results=[table(MUS075="FULL") for _ in range(_MAX_MISSING_ROUNDS)])
+    use_case, notifier, _ = build_use_case(config=config, clock=clock, table_client=table_client)
+
+    result = use_case.execute(skip_wait=True)
+
+    assert result == 1
+    assert "all groups taken" in notifier.messages[-1]
+    assert "not in the UPV table" not in notifier.messages[-1]
 
 
 def test_a_group_missing_for_the_limit_of_rounds_is_dropped_without_waiting_for_the_window():
