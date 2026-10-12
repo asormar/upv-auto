@@ -43,15 +43,52 @@ def test_redacting_filter_leaves_unrelated_text_untouched():
     assert record.getMessage() == "Booking finished after 3 attempts"
 
 
-def test_configure_log_hygiene_attaches_filter_and_quiets_httpx_logger():
-    filter_ = RedactingFilter()
-    root = logging.getLogger()
+def test_configure_log_hygiene_quiets_httpx_logger():
+    httpx_logger = logging.getLogger("httpx")
+    previous_level = httpx_logger.level
+    restore = configure_log_hygiene(RedactingFilter())
     try:
-        configure_log_hygiene(filter_)
-        assert filter_ in root.filters
-        assert logging.getLogger("httpx").level == logging.WARNING
+        assert httpx_logger.level == logging.WARNING
     finally:
-        root.removeFilter(filter_)
+        restore()
+        httpx_logger.setLevel(previous_level)
+
+
+def test_configure_log_hygiene_redacts_records_from_child_loggers(caplog):
+    filter_ = RedactingFilter()
+    filter_.register("alice123", "s3cr3t-pw")
+    httpx_level = logging.getLogger("httpx").level
+    restore = configure_log_hygiene(filter_)
+    try:
+        child = logging.getLogger("upv_auto.app.book_slot")
+        with caplog.at_level(logging.INFO, logger="upv_auto"):
+            child.info(MESSAGE)
+            child.info("formatted %s for %s", "alice123", "MUS021")
+    finally:
+        restore()
+        logging.getLogger("httpx").setLevel(httpx_level)
+
+    assert len(caplog.records) == 2
+    for record in caplog.records:
+        text = record.getMessage()
+        assert "alice123" not in text
+        assert "s3cr3t-pw" not in text
+        assert "MUS021" not in text
+        assert "alice@example.com" not in text
+        assert "123e4567-e89b-12d3-a456-426614174000" not in text
+    assert "[group]" in caplog.records[0].getMessage()
+    assert "[email]" in caplog.records[0].getMessage()
+
+
+def test_configure_log_hygiene_restore_puts_back_the_previous_record_factory():
+    before = logging.getLogRecordFactory()
+    httpx_level = logging.getLogger("httpx").level
+    restore = configure_log_hygiene(RedactingFilter())
+    assert logging.getLogRecordFactory() is not before
+    restore()
+    logging.getLogger("httpx").setLevel(httpx_level)
+
+    assert logging.getLogRecordFactory() is before
 
 
 def test_mask_for_actions_prints_add_mask_lines_for_each_non_empty_value(capsys):

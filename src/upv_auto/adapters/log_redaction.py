@@ -3,7 +3,8 @@
 Public repository logs must never carry per-user identifying information
 (platform-operations spec's "Public Log Hygiene", credential-custody's "No
 Plaintext in Logs"). `RedactingFilter` scrubs every log record before it
-reaches a handler; `mask_for_actions` additionally emits a GitHub Actions
+reaches a handler, whichever logger or handler it goes through;
+`mask_for_actions` additionally emits a GitHub Actions
 `::add-mask::` line for a value the moment it becomes known, so it is masked
 even in a log line this filter never anticipated.
 """
@@ -12,6 +13,9 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
+from collections.abc import Callable
+from typing import Any
 
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 _GROUP_CODE_RE = re.compile(r"\b[A-Z]{3}\d{3}\b")
@@ -32,12 +36,16 @@ class RedactingFilter(logging.Filter):
     def __init__(self) -> None:
         super().__init__()
         self._secrets: set[str] = set()
+        # `register()` is called from the per-user worker threads of `run_batch`
+        # while other threads are logging through `filter()`.
+        self._lock = threading.Lock()
 
     def register(self, *values: str | None) -> None:
         """Register plaintext values that must never appear in a log record."""
-        for value in values:
-            if value:
-                self._secrets.add(value)
+        with self._lock:
+            for value in values:
+                if value:
+                    self._secrets.add(value)
 
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
@@ -48,7 +56,9 @@ class RedactingFilter(logging.Filter):
         return True
 
     def _redact(self, text: str) -> str:
-        for secret in self._secrets:
+        with self._lock:
+            secrets = tuple(self._secrets)
+        for secret in secrets:
             text = text.replace(secret, "***")
         text = _UUID_RE.sub("[id]", text)
         text = _EMAIL_RE.sub("[email]", text)
@@ -56,17 +66,37 @@ class RedactingFilter(logging.Filter):
         return text
 
 
-def configure_log_hygiene(filter_: RedactingFilter) -> None:
-    """Attach `filter_` to the root logger, and quiet the noisy `httpx` logger.
+def configure_log_hygiene(filter_: RedactingFilter) -> Callable[[], None]:
+    """Run `filter_` on every log record, and quiet the noisy `httpx` logger.
 
-    Attaching to the *logger* (not just its handlers) means every handler —
-    including ones added later, and pytest's own `caplog` handler — sees the
-    already-redacted record. `httpx` logs full request URLs at INFO, which
-    for this codebase's PostgREST traffic can contain user ids; WARNING and
-    above only.
+    A logger-level filter only sees records logged *directly* on that logger,
+    not ones propagated up from children such as `upv_auto.app.book_slot`, so
+    attaching to the root logger would leave nearly every record untouched.
+    Wrapping the record factory scrubs each record the moment it is created,
+    before any logger or handler (including ones added later, and pytest's own
+    `caplog` handler) can see it. `httpx` logs full request URLs at INFO,
+    which for this codebase's PostgREST traffic can contain user ids; WARNING
+    and above only.
+
+    Returns a callable that restores the previous record factory.
     """
-    logging.getLogger().addFilter(filter_)
+    previous = logging.getLogRecordFactory()
+
+    def factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
+        record = previous(*args, **kwargs)
+        filter_.filter(record)
+        return record
+
+    logging.setLogRecordFactory(factory)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    def restore() -> None:
+        # Only unwind our own wrapper: a factory installed on top of it later
+        # would be lost, and one below it is untouched either way.
+        if logging.getLogRecordFactory() is factory:
+            logging.setLogRecordFactory(previous)
+
+    return restore
 
 
 def mask_for_actions(*values: str | None) -> None:
@@ -77,4 +107,4 @@ def mask_for_actions(*values: str | None) -> None:
     """
     for value in values:
         if value:
-            print(f"::add-mask::{value}")
+            print(f"::add-mask::{value}", flush=True)
