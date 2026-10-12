@@ -3,16 +3,18 @@
 // `getUser()` -> `rpc/claim_refresh` -> `workflow_dispatch(request_id)` only
 // (design.md's "Refresh dispatch" decision). `claim_refresh` is a security
 // definer SQL function that owns every rate-limit rule (sign-in throttle,
-// manual 5min/day limits, pending reuse/expiry) atomically, so this function
-// never re-implements or second-guesses those checks — a `null` claim always
-// means "do not dispatch", and this function decides only how to answer the
-// caller for that case.
+// manual 5min/day limits, daily cap, missing credentials, pending
+// reuse/expiry) atomically, so this function never re-implements or
+// second-guesses those checks — an empty claim always means "do not
+// dispatch", and this function decides only how to answer the caller for that
+// case.
 //
 // Set these function secrets (`supabase secrets set`), never GitHub Actions
-// secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
-// `ALLOWED_ORIGIN` (see `_shared/cors.ts`), `GITHUB_REPO` ("owner/repo"),
-// `GITHUB_DISPATCH_TOKEN` (a fine-grained PAT scoped to Actions:write on
-// that one repo only — OWNER 0.3's "dispatch PAT").
+// secrets: `ALLOWED_ORIGIN` (see `_shared/cors.ts`), `GITHUB_REPO`
+// ("owner/repo"), `GITHUB_DISPATCH_TOKEN` (a fine-grained PAT scoped to
+// Actions:write on that one repo only — OWNER 0.3's "dispatch PAT").
+// `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are
+// injected by Supabase into every deployed function; do not set them.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
@@ -105,20 +107,28 @@ Deno.serve(async (req) => {
   // Only the opaque request id ever leaves this function as a workflow
   // input — never the user id or email (design.md's "Refresh dispatch"
   // decision: "Public run inputs show only a random UUID").
-  const dispatchResponse = await fetch(
-    `https://api.github.com/repos/${githubRepo}/actions/workflows/refresh.yml/dispatches`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${dispatchToken}`,
-        Accept: "application/vnd.github+json",
-        "Content-Type": "application/json",
+  let dispatchOk = false;
+  try {
+    const dispatchResponse = await fetch(
+      `https://api.github.com/repos/${githubRepo}/actions/workflows/refresh.yml/dispatches`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${dispatchToken}`,
+          Accept: "application/vnd.github+json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ref: "main", inputs: { request_id: claimed.id } }),
       },
-      body: JSON.stringify({ ref: "main", inputs: { request_id: claimed.id } }),
-    },
-  );
+    );
+    dispatchOk = dispatchResponse.ok;
+  } catch {
+    // A network error is the same as a rejected dispatch for the caller:
+    // fall through to the failure branch instead of leaving the claim
+    // `pending` and answering 500 without CORS headers.
+  }
 
-  if (!dispatchResponse.ok) {
+  if (!dispatchOk) {
     // Best-effort: mark the claim failed so it does not sit `pending` for
     // the full 15-minute expiry window, silently blocking a retry via
     // `claim_refresh`'s pending-request reuse.
