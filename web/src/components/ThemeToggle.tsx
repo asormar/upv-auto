@@ -9,8 +9,12 @@ const STORAGE_KEY = "upv-auto-theme";
 const STATUS_BAR = { light: "#eef1f6", dark: "#1c202b" } as const;
 
 function initialTheme(): Theme {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === "light" || stored === "dark") return stored;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+  } catch {
+    // Blocked site data throws on access: fall back to the system preference.
+  }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
@@ -19,7 +23,11 @@ export function ThemeToggle() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem(STORAGE_KEY, theme);
+    try {
+      localStorage.setItem(STORAGE_KEY, theme);
+    } catch {
+      // Private mode or blocked storage: the choice just is not remembered.
+    }
     // The app switches theme itself, so prefers-color-scheme metas would lie.
     document
       .querySelector('meta[name="theme-color"]')
