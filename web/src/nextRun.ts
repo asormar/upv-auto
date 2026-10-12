@@ -1,3 +1,5 @@
+import { DEFAULT_TIMEZONE, zonedInstant, zonedParts } from "./zone";
+
 const WEEKDAYS: Record<string, number> = {
   sunday: 0,
   monday: 1,
@@ -11,24 +13,35 @@ const WEEKDAYS: Record<string, number> = {
 const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
-/** The next moment the booking window opens, or null if the config can't be read. */
-export function nextRunAt(weekday: string, opensAt: string, now: Date = new Date()): Date | null {
+/**
+ * The next moment the booking window opens, or null if the config can't be
+ * read. `weekday` and `opensAt` are wall-clock in `timeZone` (the UPV's), not
+ * the browser's.
+ */
+export function nextRunAt(
+  weekday: string,
+  opensAt: string,
+  now: Date = new Date(),
+  timeZone: string = DEFAULT_TIMEZONE,
+): Date | null {
   const target = WEEKDAYS[weekday.toLowerCase()];
   const [hours, minutes = 0, seconds = 0] = opensAt.split(":").map(Number);
   if (target === undefined || Number.isNaN(hours)) return null;
 
-  const next = new Date(now);
-  next.setHours(hours, minutes, seconds, 0);
-  let ahead = (target - now.getDay() + 7) % 7;
-  if (ahead === 0 && next <= now) ahead = 7;
-  next.setDate(next.getDate() + ahead);
-  return next;
+  const today = zonedParts(now, timeZone);
+  const at = (ahead: number) =>
+    zonedInstant(timeZone, today.year, today.month, today.day + ahead, hours, minutes, seconds);
+
+  const ahead = (target - today.weekday + 7) % 7;
+  const next = at(ahead);
+  return ahead === 0 && next <= now ? at(7) : next;
 }
 
-/** "Sábado 19 sep, 10:01" */
-export function formatRunDay(date: Date): string {
-  const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-  return `${DAY_NAMES[date.getDay()]} ${date.getDate()} ${MONTHS[date.getMonth()]}, ${time}`;
+/** "Sábado 19 sep, 10:01", read in `timeZone` (the UPV's). */
+export function formatRunDay(date: Date, timeZone: string = DEFAULT_TIMEZONE): string {
+  const p = zonedParts(date, timeZone);
+  const time = `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+  return `${DAY_NAMES[p.weekday]} ${p.day} ${MONTHS[p.month - 1]}, ${time}`;
 }
 
 export interface Remaining {

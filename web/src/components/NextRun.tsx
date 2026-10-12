@@ -5,6 +5,8 @@ import { formatRunDay, nextRunAt, splitRemaining } from "../nextRun";
 interface Props {
   weekday: string;
   opensAt: string;
+  /** The UPV's timezone, which `weekday` and `opensAt` are read in. */
+  timeZone?: string;
 }
 
 const TWO_DIGITS = { minimumIntegerDigits: 2 } as const;
@@ -19,7 +21,7 @@ const SIXTY = { 1: { max: 5 } };
  * The tick lives here, not in the page, so only this line re-renders each
  * second. The group keeps the three numbers animating as one.
  */
-export function NextRun({ weekday, opensAt }: Props) {
+export function NextRun({ weekday, opensAt, timeZone }: Props) {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -27,14 +29,14 @@ export function NextRun({ weekday, opensAt }: Props) {
     return () => window.clearInterval(timer);
   }, []);
 
-  const at = nextRunAt(weekday, opensAt, now);
+  const at = nextRunAt(weekday, opensAt, now, timeZone);
   if (!at) return <>Próxima ejecución: {weekday} {opensAt}</>;
 
   const { hours, minutes, seconds } = splitRemaining(at.getTime() - now.getTime());
 
   return (
     <>
-      {formatRunDay(at)} · faltan{" "}
+      {formatRunDay(at, timeZone)} · faltan{" "}
       <span
         className="num countdown"
         role="timer"

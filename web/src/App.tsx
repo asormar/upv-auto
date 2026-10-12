@@ -1,5 +1,5 @@
 import NumberFlow from "@number-flow/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BACKEND,
   getConfig,
@@ -23,11 +23,13 @@ import { QueuePanelSkeleton } from "./components/QueuePanelSkeleton";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { WeekBar } from "./components/WeekBar";
 import { Alert, Clock, Key, Refresh, Shield, SignOut } from "./components/icons";
-import { CredentialsForm } from "./components/CredentialsForm";
+import { CredentialsDialog } from "./components/CredentialsDialog";
 import { describeActivity } from "./activity";
 import { NextRun } from "./components/NextRun";
 import { nextRunAt } from "./nextRun";
+import { useClock } from "./useClock";
 import { completeWeek } from "./week";
+import { DEFAULT_TIMEZONE, zonedIsoDate } from "./zone";
 
 export default function App() {
   const [config, setConfig] = useState<Config | null>(null);
@@ -49,14 +51,21 @@ export default function App() {
   const friends = useFriends();
   const incomingRequests = friends.friends.filter((friend) => friend.relation === "incoming").length;
 
+  // Only the newest load may write: a slow one (Realtime-triggered, or after a
+  // save) must not undo a fresher result or error.
+  const latestLoad = useRef(0);
+
   const load = useCallback(async (refresh = false) => {
+    const ticket = ++latestLoad.current;
     setError(null);
     try {
       const [nextConfig, nextSchedule] = await Promise.all([getConfig(), getSchedule(refresh)]);
+      if (ticket !== latestLoad.current) return null;
       setConfig(nextConfig);
       setSchedule(nextSchedule);
       return nextSchedule;
     } catch (cause) {
+      if (ticket !== latestLoad.current) return null;
       setError(cause instanceof Error ? cause.message : String(cause));
       return null;
     }
@@ -74,15 +83,29 @@ export default function App() {
 
   // The UPV table is the current week; the queue books the next one. Fill in
   // the holidays the table cannot show (see `week.ts`).
+  //
+  // The clock keeps a tab left open across midnight or the weekly run honest.
+  // The memo is keyed on what actually moves (the run instant and today's date
+  // in the UPV's timezone), not on the clock itself, so it recomputes then and
+  // not every minute.
+  const now = useClock();
+  const timeZone = config?.timezone ?? DEFAULT_TIMEZONE;
+  const nextRunMs = config
+    ? (nextRunAt(config.window.weekday, config.window.opens_at, now, timeZone)?.getTime() ?? null)
+    : null;
+  const today = zonedIsoDate(now, timeZone);
   const days = useMemo(
     () =>
       completeWeek(
         schedule?.days ?? [],
-        config ? nextRunAt(config.window.weekday, config.window.opens_at) : null,
+        nextRunMs === null ? null : new Date(nextRunMs),
         schedule?.activity.codacti ?? "",
         config?.bookings ?? [],
+        now,
+        timeZone,
       ),
-    [schedule, config?.window.weekday, config?.window.opens_at, config?.bookings],
+    // `now` is deliberately absent: only its date (`today`) matters here.
+    [schedule, nextRunMs, today, timeZone, config?.bookings],
   );
 
   // Start on the first day that already holds something of yours, else the
@@ -165,7 +188,11 @@ export default function App() {
   const limits = schedule?.limits;
   const limitReached = limits ? limits.queued >= limits.max_per_activity : false;
   const nextRun = config ? (
-    <NextRun weekday={config.window.weekday} opensAt={config.window.opens_at} />
+    <NextRun
+      weekday={config.window.weekday}
+      opensAt={config.window.opens_at}
+      timeZone={config.timezone}
+    />
   ) : (
     "Cargando…"
   );
@@ -173,24 +200,13 @@ export default function App() {
   return (
     <div className="shell">
       {editingCredentials && (
-        <div
-          className="sheet-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Cambiar mis credenciales de la UPV"
-        >
-          <div className="sheet-card">
-            <CredentialsForm
-              title="Cambiar tus credenciales"
-              submitLabel="Guardar y actualizar"
-              onCancel={() => setEditingCredentials(false)}
-              onSaved={() => {
-                setEditingCredentials(false);
-                void refreshStatus.triggerCredentialsRefresh();
-              }}
-            />
-          </div>
-        </div>
+        <CredentialsDialog
+          onClose={() => setEditingCredentials(false)}
+          onSaved={() => {
+            setEditingCredentials(false);
+            void refreshStatus.triggerCredentialsRefresh();
+          }}
+        />
       )}
       {BACKEND === "supabase" && <FriendsLive notice={friends.notice} silenced={friendsOpen} />}
       {friendsOpen && <FriendsDialog state={friends} onClose={() => setFriendsOpen(false)} />}

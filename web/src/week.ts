@@ -7,11 +7,12 @@
 import type { Booking, Day } from "./api/types";
 import { buildDays, dayRank } from "./scheduleView";
 import { typicalGroups } from "./typicalWeek";
+import { DEFAULT_TIMEZONE, zonedParts } from "./zone";
 
 const WEEKDAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"];
 
 /**
- * Holidays that close the sports service, keyed by local date (YYYY-MM-DD).
+ * Holidays that close the sports service, keyed by calendar date (YYYY-MM-DD).
  *
  * Valencian public holidays only: UPV-specific closures are not listed. Add
  * the next year's once its calendar is published.
@@ -25,31 +26,39 @@ const HOLIDAYS: Record<string, string> = {
   "2027-01-06": "Epifanía del Señor",
 };
 
-const LONG_DATE = new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "long" });
+// Calendar dates are handled as midnight UTC of that date ("floating": the
+// instant means nothing, only year/month/day do), so neither the browser's
+// timezone nor its DST changes can shift them. Hence the UTC getters and the
+// UTC formatter.
+const LONG_DATE = new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "long", timeZone: "UTC" });
 
 function isoDate(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${month}-${day}`;
 }
 
 function addDays(date: Date, days: number): Date {
   const result = new Date(date);
-  result.setDate(result.getDate() + days);
+  result.setUTCDate(result.getUTCDate() + days);
   return result;
 }
 
-function mondayOf(date: Date): Date {
-  const monday = new Date(date);
-  monday.setHours(0, 0, 0, 0);
-  return addDays(monday, -((monday.getDay() + 6) % 7));
+/** The calendar date `instant` falls on in `timeZone`, as a floating date. */
+function calendarDay(instant: Date, timeZone: string): Date {
+  const { year, month, day } = zonedParts(instant, timeZone);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function mondayOf(instant: Date, timeZone: string): Date {
+  const day = calendarDay(instant, timeZone);
+  return addDays(day, -((day.getUTCDay() + 6) % 7));
 }
 
 /** The Monday after the run: the week the queue books. */
-function bookedMonday(nextRun: Date): Date {
-  const day = new Date(nextRun);
-  day.setHours(0, 0, 0, 0);
-  return addDays(day, (8 - day.getDay()) % 7 || 7);
+function bookedMonday(nextRun: Date, timeZone: string): Date {
+  const day = calendarDay(nextRun, timeZone);
+  return addDays(day, (8 - day.getUTCDay()) % 7 || 7);
 }
 
 /**
@@ -60,6 +69,8 @@ function bookedMonday(nextRun: Date): Date {
  * it: it is a holiday of the booked week (`closed`, empty), or it is a
  * holiday of the week the table shows, so the UPV left it out and its usual
  * groups stand in (`typical`).
+ *
+ * "Today" and the run day are read in `timeZone` (the UPV's), not the browser's.
  */
 export function completeWeek(
   days: Day[],
@@ -67,10 +78,11 @@ export function completeWeek(
   codacti: string,
   bookings: Booking[],
   now: Date = new Date(),
+  timeZone: string = DEFAULT_TIMEZONE,
 ): Day[] {
   if (!nextRun) return days;
-  const booked = bookedMonday(nextRun);
-  const shown = mondayOf(now);
+  const booked = bookedMonday(nextRun, timeZone);
+  const shown = mondayOf(now, timeZone);
 
   const weekdays = WEEKDAY_NAMES.flatMap((name, index): Day[] => {
     const found = days.find((day) => dayRank(day.name) === index);
