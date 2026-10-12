@@ -100,7 +100,9 @@ GitHub Actions (the only UPV client)
   booking queue, a cached schedule per user, and refresh/result tracking —
   all under Row-Level Security, so one user's Postgres row is invisible to
   another. `supabase/migrations/` holds the schema, one numbered file per
-  change (friends and profile photos are `0004` and `0005`);
+  change (friends and profile photos are `0004` and `0005`, live friend requests
+  are `0006`, and `0007` locks the service-only functions away from the
+  public API);
   `supabase/functions/` holds the two Edge Functions (`refresh`,
   `delete-account`).
 - **GitHub Actions** stays the only thing that ever talks to UPV, exactly as
