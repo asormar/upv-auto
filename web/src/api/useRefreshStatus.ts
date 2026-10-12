@@ -75,10 +75,17 @@ export function useRefreshStatus(onRefreshed: () => void): RefreshStatus {
     if (BACKEND === "local") return;
     let cancelled = false;
     let unsubscribeChannel: (() => void) | null = null;
+    let subscribedUserId: string | null = null;
 
     // `onAuthStateChange` fires immediately with the current session (or
     // `null`), so this both seeds the initial state and reacts to sign-out.
     const unsubscribeAuth = onAuthStateChange((session) => {
+      // Token refreshes and tab refocuses emit a new session for the same
+      // user: resubscribing and re-seeding then would only churn the channel.
+      const userId = session?.user.id ?? null;
+      if (userId === subscribedUserId) return;
+      subscribedUserId = userId;
+
       unsubscribeChannel?.();
       unsubscribeChannel = null;
 

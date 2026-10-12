@@ -163,14 +163,17 @@ export interface RefreshRequestRow {
  * (schedule-refresh spec's "Visible Loading State During Pending Refresh").
  * RLS already scopes every row to `auth.uid()` server-side; the `user_id`
  * filter here only narrows which changes wake this callback. Returns an
- * unsubscribe function, mirroring `onAuthStateChange`'s own shape.
+ * unsubscribe function, mirroring `onAuthStateChange`'s own shape. The topic
+ * gets a unique suffix because `removeChannel` is async and `channel()` hands
+ * back the existing channel for a repeated topic: a quick resubscribe would
+ * otherwise reuse the one being torn down and end up with a dead subscription.
  */
 export function subscribeToRefreshRequests(
   userId: string,
   onChange: (row: RefreshRequestRow) => void,
 ): () => void {
   const channel = supabase()
-    .channel(`refresh_requests:${userId}`)
+    .channel(`refresh_requests:${userId}:${crypto.randomUUID()}`)
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "refresh_requests", filter: `user_id=eq.${userId}` },

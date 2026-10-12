@@ -20,6 +20,10 @@ type GateState =
 export function AuthGate({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [state, setState] = useState<GateState>({ phase: "loading" });
+  // supabase-js hands out a new Session object on every token refresh and tab
+  // refocus; only a change of *user* should send the gate back to checking.
+  // `undefined` still means "not known yet".
+  const userId = session === undefined ? undefined : (session?.user.id ?? null);
 
   useEffect(() => {
     if (BACKEND === "local") return;
@@ -35,8 +39,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (BACKEND === "local" || session === undefined) return;
-    if (!session) {
+    if (BACKEND === "local" || userId === undefined) return;
+    if (userId === null) {
       setState({ phase: "signed-out" });
       return;
     }
@@ -49,13 +53,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
       .catch(() => {
         // RLS gives an authenticated user nothing to fail on for their own
         // row; treat any read failure as "not saved yet" rather than
-        // stalling the gate on a transient error.
+        // stalling the gate on a transient error. This only runs when the
+        // user changes, so a signed-in user is never demoted by a later blip.
         if (!cancelled) setState({ phase: "needs-credentials" });
       });
     return () => {
       cancelled = true;
     };
-  }, [session]);
+  }, [userId]);
 
   if (BACKEND === "local" || state.phase === "ready") return <>{children}</>;
 
