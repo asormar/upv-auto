@@ -211,7 +211,7 @@ interface AppSettingsRow {
 
 const DEFAULT_ACTIVITY: Config["activity"] = { name: "", campus: "", tipoact: "", codacti: "" };
 const DEFAULT_WINDOW: Config["window"] = {
-  weekday: "sabado",
+  weekday: "saturday",
   opens_at: "10:01",
   closes_at: "10:04",
   retry_interval_seconds: 5,
@@ -307,7 +307,7 @@ export async function getSchedule(_refresh = false): Promise<Schedule> {
 //
 // Supabase only: the local FastAPI backend has no accounts, so `api.ts`
 // re-exports these directly instead of routing them through `Backend`.
-// Everything goes through `0002_friends.sql`: a friend's queue is only
+// Everything goes through `0004_friends.sql`: a friend's queue is only
 // readable through `list_friends()`, which returns preferred codes alone.
 
 const FRIEND_ERRORS: Record<string, string> = {
