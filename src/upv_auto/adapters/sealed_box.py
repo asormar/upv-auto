@@ -33,9 +33,17 @@ class SealedBoxOpener:
         self._private_keys = private_keys
 
     def open(self, sealed: str, key_id: str) -> Credentials:
+        # `SEAL_PRIVATE_KEYS` is parsed from JSON by the caller, which may hand
+        # over a list or a string. Checked here, per call, so a bad secret is
+        # recorded per user like any other unusable key instead of surfacing
+        # as an `AttributeError` in the batch's last-resort handler.
+        if not isinstance(self._private_keys, dict):
+            raise CredentialsUnavailable("SEAL_PRIVATE_KEYS must be a JSON object of key id to private key")
         private_key_b64 = self._private_keys.get(key_id)
         if private_key_b64 is None:
             raise CredentialsUnavailable(f"Unknown seal key id: {key_id!r}")
+        if not isinstance(private_key_b64, str):
+            raise CredentialsUnavailable(f"Seal key {key_id!r} is not a base64 string")
 
         try:
             private_key = PrivateKey(base64.b64decode(private_key_b64))

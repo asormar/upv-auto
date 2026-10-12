@@ -143,8 +143,6 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def _demo_store():
     """A schedule store backed by the sample table, so the UI can run offline."""
-    import os
-
     from upv_auto.adapters.upv_activities_parser import parse_groups
     from upv_auto.adapters.web.api import ScheduleStore
 

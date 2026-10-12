@@ -41,6 +41,24 @@ def test_unknown_key_id_raises_credentials_unavailable():
         opener.open(fixture["sealed"], fixture["key_id"])
 
 
+@pytest.mark.parametrize("bad_keys", [["a", "b"], "just-a-string", 42, None])
+def test_non_object_key_config_raises_credentials_unavailable(bad_keys):
+    """A `SEAL_PRIVATE_KEYS` secret that parses as JSON but is not an object."""
+    fixture = load_fixture()
+    opener = SealedBoxOpener(bad_keys)
+
+    with pytest.raises(CredentialsUnavailable, match="JSON object"):
+        opener.open(fixture["sealed"], fixture["key_id"])
+
+
+def test_non_string_private_key_raises_credentials_unavailable():
+    fixture = load_fixture()
+    opener = SealedBoxOpener({fixture["key_id"]: 12345})
+
+    with pytest.raises(CredentialsUnavailable):
+        opener.open(fixture["sealed"], fixture["key_id"])
+
+
 def test_wrong_private_key_raises_credentials_unavailable():
     fixture = load_fixture()
     other_public, other_private = generate_keypair()
