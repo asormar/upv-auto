@@ -315,6 +315,8 @@ const FRIEND_ERRORS: Record<string, string> = {
   cannot_friend_self: "Ese es tu propio código.",
   already_friends: "Ya sois amigos.",
   request_already_sent: "Ya le enviaste una solicitud. Falta que la acepte.",
+  friend_rate_limited: "Has enviado demasiadas solicitudes seguidas. Inténtalo de nuevo dentro de un rato.",
+  request_cooldown: "No puedes volver a enviar esta solicitud todavía. Inténtalo de nuevo más tarde.",
   request_not_found: "Esa solicitud ya no existe.",
   not_signed_in: "Tu sesión ha caducado. Vuelve a iniciar sesión.",
 };

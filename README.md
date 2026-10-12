@@ -102,7 +102,8 @@ GitHub Actions (the only UPV client)
   another. `supabase/migrations/` holds the schema, one numbered file per
   change (friends and profile photos are `0004` and `0005`, live friend requests
   are `0006`, `0007` locks the service-only functions away from the
-  public API, and `0008` caps refresh abuse and fixes the queue-limit lookup);
+  public API, `0008` caps refresh abuse and fixes the queue-limit lookup, and
+  `0009` rate-limits friend requests and caps aliases and queue size);
   `supabase/functions/` holds the two Edge Functions (`refresh`,
   `delete-account`).
 - **GitHub Actions** stays the only thing that ever talks to UPV, exactly as
