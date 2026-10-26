@@ -8,7 +8,10 @@ thread — login rejected, an unsealable credential, an unexpected exception —
 is recorded for that user only and never aborts the others (per-user
 failure isolation). Each user's outcome is buffered (`BufferedNotifier`) and
 only actually sent, one at a time, after every thread has joined, so SMTP
-stays out of the turn-taking window.
+stays out of the turn-taking window. The roster is read once at the start,
+so each user's queue is re-read right before their booking turn (see
+`QUEUE_REREAD_LEAD_SECONDS`); a user who cleared it meanwhile books nothing
+and is recorded as `booked` (nothing left to get), the closest allowed status.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from upv_auto.app.book_slot import BookSlotUseCase
 from upv_auto.app.turns import BufferedNotifier, TurnScheduler, TurnTakingClock
 from upv_auto.config import AppConfig
 from upv_auto.domain.errors import CredentialsUnavailable
-from upv_auto.domain.models import Credentials, UserRecord
+from upv_auto.domain.models import BookingTarget, Credentials, UserRecord
 from upv_auto.ports import (
     ActivityTableClient,
     Authenticator,
@@ -169,6 +172,26 @@ def _process_user(
         )
         turn_clock = TurnTakingClock(user.user_id, scheduler, clock)
 
+        def refresh_bookings() -> list[BookingTarget] | None:
+            # The roster is a snapshot from batch start, but the web autosaves
+            # every queue edit: re-read just before this user books. Booking
+            # the old queue beats not booking, so any failure keeps the snapshot.
+            try:
+                fresh = directory.current_bookings(user.user_id)
+            except Exception as exc:
+                logger.warning(
+                    "%s: could not re-read the queue (%s); using the batch-start snapshot",
+                    label,
+                    type(exc).__name__,
+                )
+                return None
+            logger.info(
+                "%s: queue re-read, %s",
+                label,
+                "unchanged" if fresh == user.bookings else "changed since the batch started",
+            )
+            return fresh
+
         with table_client_factory(user_config) as table_client:
             authenticator = authenticator_factory(user_config)
             verifier = verifier_factory(user_config)
@@ -183,6 +206,7 @@ def _process_user(
                 notifier=notifier,
                 clock=turn_clock,
                 config=user_config,
+                refresh_bookings=refresh_bookings,
             )
             exit_code = use_case.execute(skip_wait=skip_wait)
 

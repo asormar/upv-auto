@@ -17,11 +17,15 @@ import httpx
 
 from upv_auto.config import parse_booking_dict
 from upv_auto.domain.errors import CredentialsUnavailable
-from upv_auto.domain.models import GroupAvailability, RefreshJob, UserRecord
+from upv_auto.domain.models import BookingTarget, GroupAvailability, RefreshJob, UserRecord
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = httpx.Timeout(15.0, connect=5.0)
+
+# The pre-window queue re-read runs while holding the user's turn: a slow
+# Supabase must cost seconds, not stall the rotation (the snapshot is the fallback).
+CURRENT_BOOKINGS_TIMEOUT = httpx.Timeout(5.0)
 
 
 class SupabaseRestUserDirectory:
@@ -71,6 +75,20 @@ class SupabaseRestUserDirectory:
             )
             for row in response.json()
         ]
+
+    def current_bookings(self, user_id: str) -> list[BookingTarget]:
+        """The user's queue as stored now: the roster only holds it as of batch start,
+        and the web autosaves every edit. A user without a queue row has an empty queue."""
+        response = self._client.get(
+            "/booking_queue",
+            params={"user_id": f"eq.{user_id}", "select": "bookings"},
+            timeout=CURRENT_BOOKINGS_TIMEOUT,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        if not rows:
+            return []
+        return [parse_booking_dict(b) for b in rows[0]["bookings"]]
 
     def record_result(self, user_id: str, run_id: str, status: str, summary: str) -> None:
         response = self._client.post(

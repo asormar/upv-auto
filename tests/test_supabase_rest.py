@@ -56,6 +56,31 @@ def test_roster_calls_batch_roster_rpc_and_parses_bookings():
     assert [slot.group_code for slot in user.bookings[0].options] == ["MUS021", "MUS036"]
 
 
+def test_current_bookings_reads_one_users_queue_row():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/rest/v1/booking_queue"
+        assert request.url.params["user_id"] == "eq.u-1"
+        assert request.url.params["select"] == "bookings"
+        return httpx.Response(200, json=[{"bookings": [{"group_code": "MUS021", "alternatives": ["MUS036"]}]}])
+
+    with make_directory(handler) as directory:
+        bookings = directory.current_bookings("u-1")
+
+    assert [[slot.group_code for slot in b.options] for b in bookings] == [["MUS021", "MUS036"]]
+
+
+def test_current_bookings_is_empty_without_a_row_and_raises_on_errors_or_bad_data():
+    with make_directory(lambda request: httpx.Response(200, json=[])) as directory:
+        assert directory.current_bookings("u-1") == []
+    with make_directory(lambda request: httpx.Response(500)) as directory:
+        with pytest.raises(httpx.HTTPStatusError):
+            directory.current_bookings("u-1")
+    with make_directory(lambda request: httpx.Response(200, json=[{"bookings": [{"nope": 1}]}])) as directory:
+        with pytest.raises(Exception):
+            directory.current_bookings("u-1")
+
+
 def test_record_result_posts_a_batch_results_row():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"

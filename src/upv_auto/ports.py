@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Protocol
 
 from upv_auto.domain.models import (
+    BookingTarget,
     Credentials,
     GroupAvailability,
     RefreshJob,
@@ -51,6 +52,14 @@ class UserDirectory(Protocol):
 
     def roster(self) -> list[UserRecord]:
         """Every user with a non-empty booking queue, for this week's batch."""
+        ...
+
+    def current_bookings(self, user_id: str) -> list[BookingTarget]:
+        """One user's booking queue as it is right now (empty if they cleared it).
+
+        Raises on a transport error or unparseable data; the batch then falls
+        back to the roster snapshot.
+        """
         ...
 
     def record_result(self, user_id: str, run_id: str, status: str, summary: str) -> None:

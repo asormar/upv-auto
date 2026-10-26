@@ -41,9 +41,23 @@ class FakeUserDirectory:
     def __init__(self, roster: list[UserRecord]) -> None:
         self._roster = roster
         self.results: list[tuple[str, str, str, str]] = []
+        # Per-user override of the "current" queue, or an exception to raise instead.
+        self.current: dict[str, list[BookingTarget] | Exception] = {}
+        self.current_calls: list[tuple[str, datetime]] = []
+        self.clock: FakeClock | None = None
 
     def roster(self) -> list[UserRecord]:
         return list(self._roster)
+
+    def current_bookings(self, user_id: str) -> list[BookingTarget]:
+        if self.clock is not None:
+            self.current_calls.append((user_id, self.clock.now()))
+        override = self.current.get(user_id)
+        if isinstance(override, Exception):
+            raise override
+        if override is not None:
+            return override
+        return next(user.bookings for user in self._roster if user.user_id == user_id)
 
     def record_result(self, user_id: str, run_id: str, status: str, summary: str) -> None:
         self.results.append((user_id, run_id, status, summary))
@@ -255,3 +269,91 @@ def test_a_result_that_cannot_be_recorded_fails_the_run_but_not_the_other_users(
     # The log names the user only by an opaque index, and never echoes the error text.
     assert "could not record the result: RuntimeError" in caplog.text
     assert "u-b" not in caplog.text and "example.test" not in caplog.text
+
+
+def run_one(directory: FakeUserDirectory, clock: FakeClock, table_client, *, skip_wait: bool, caplog=None):
+    """Run a one-user batch whose table client is `table_client`; returns the user's notifier."""
+    sent = FakeNotifier()
+    authenticator_factory, verifier_factory, _ = make_factories()
+    result = run_batch(
+        base_config(),
+        directory,
+        FakeCredentialOpener(),
+        authenticator_factory,
+        verifier_factory,
+        lambda config: nullcontext(table_client),
+        lambda user: sent,
+        clock,
+        RUN_ID,
+        skip_wait=skip_wait,
+    )
+    return result, sent
+
+
+def test_a_queue_edited_after_the_batch_started_is_the_one_booked():
+    directory = FakeUserDirectory([make_user("u-a", "a")])
+    directory.current["u-a"] = [BookingTarget((Slot(group_code="MUS075"),))]
+    client = FakeActivityTableClient(
+        fetch_results=[table(MUS074="BOOKABLE", MUS075="BOOKABLE")],
+        follow_results={"MUS075": [table(MUS074="BOOKABLE", MUS075="ENROLLED")]},
+    )
+
+    result, _ = run_one(
+        directory, FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ)), client, skip_wait=True
+    )
+
+    assert result == 0
+    assert ("follow", "MUS075") in client.calls and ("follow", "MUS074") not in client.calls
+    assert [status for *_, status, _ in directory.results] == ["booked"]
+
+
+def test_the_queue_is_re_read_a_minute_before_the_window_opens_and_booking_starts_on_time():
+    directory = FakeUserDirectory([make_user("u-a", "a")])
+    clock = FakeClock(datetime(2024, 1, 6, 9, 46, 0, tzinfo=TZ))
+    directory.clock = clock
+    client = FakeActivityTableClient(
+        fetch_results=[table(MUS074="BOOKABLE")],
+        follow_results={"MUS074": [table(MUS074="ENROLLED")]},
+    )
+
+    result, _ = run_one(directory, clock, client, skip_wait=False)
+
+    assert result == 0
+    [(_, read_at)] = directory.current_calls
+    assert read_at == datetime(2024, 1, 6, 9, 59, 0, tzinfo=TZ)  # opens_at 10:00 minus the lead
+    assert clock.now() >= datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ)  # nothing was fetched before
+
+
+def test_a_failed_re_read_falls_back_to_the_snapshot(caplog):
+    directory = FakeUserDirectory([make_user("u-a", "a")])
+    directory.current["u-a"] = RuntimeError("PostgREST 500 for u-a@example.test")
+    client = FakeActivityTableClient(
+        fetch_results=[table(MUS074="BOOKABLE")],
+        follow_results={"MUS074": [table(MUS074="ENROLLED")]},
+    )
+
+    with caplog.at_level("INFO"):
+        result, _ = run_one(
+            directory, FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ)), client, skip_wait=True
+        )
+
+    assert result == 0
+    assert ("follow", "MUS074") in client.calls
+    assert "using the batch-start snapshot" in caplog.text
+    assert "u-a" not in caplog.text and "example.test" not in caplog.text
+
+
+def test_a_queue_emptied_after_the_batch_started_books_nothing_and_is_recorded():
+    directory = FakeUserDirectory([make_user("u-a", "a")])
+    directory.current["u-a"] = []
+    client = FakeActivityTableClient(fetch_results=[])  # any fetch would raise
+
+    result, notifier = run_one(
+        directory, FakeClock(datetime(2024, 1, 6, 10, 0, 0, tzinfo=TZ)), client, skip_wait=True
+    )
+
+    assert result == 0
+    assert client.calls == []
+    [(user_id, _, status, summary)] = directory.results
+    assert (user_id, status) == ("u-a", "booked")
+    assert "nothing was booked" in summary and notifier.messages

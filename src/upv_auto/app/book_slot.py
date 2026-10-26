@@ -5,7 +5,11 @@ Algorithm:
    `authenticate`); on failure, notify and stop (exit code 1).
 2. Wait until the window opens (coarse sleep while more than 5s remain, then
    fine 50ms steps). With `skip_wait` (testing), the window opens immediately
-   and keeps its configured length.
+   and keeps its configured length. If a `refresh_bookings` hook is given
+   (the batch), it runs `QUEUE_REREAD_LEAD_SECONDS` before the window opens
+   (immediately with `skip_wait`) and its result replaces the configured
+   queue, so edits made after the batch started still count; an empty result
+   means the user cleared their queue: nothing is booked.
 3. Until the window closes, run rounds. Each round downloads the activity
    table exactly once (`fetch_groups`) and then goes round-robin over every
    pending booking target, resolving its current group (preferred first,
@@ -45,7 +49,8 @@ Algorithm:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Callable
 
 from upv_auto.app.authenticate import authenticate
 from upv_auto.config import AppConfig
@@ -58,6 +63,18 @@ logger = logging.getLogger(__name__)
 # coarse chunks; below it, switch to fine-grained polling.
 _COARSE_THRESHOLD_SECONDS = 5.0
 _FINE_STEP_SECONDS = 0.05
+
+# When a `refresh_bookings` hook is given, it runs this long before the window
+# opens: late enough to catch nearly every edit, early enough that a slow read
+# (and the turn rotation among many users) cannot push a first request past
+# `opens_at`. The web's notice uses the same number: keep
+# `QUEUE_REREAD_LEAD_SECONDS` in `web/src/nextRun.ts` equal.
+QUEUE_REREAD_LEAD_SECONDS = 60.0
+
+# Returns the user's current queue, or None to keep the configured one.
+RefreshBookings = Callable[[], "list[BookingTarget] | None"]
+
+QUEUE_EMPTIED_NOTE = "Your queue was empty when the booking window opened, so nothing was booked."
 
 # UPV may refuse a booking without saying so (the table just stays bookable).
 # This many refusals in a row for the same target, without it moving on to
@@ -78,6 +95,7 @@ class BookSlotUseCase:
         notifier: Notifier,
         clock: Clock,
         config: AppConfig,
+        refresh_bookings: RefreshBookings | None = None,
     ) -> None:
         self._authenticator = authenticator
         self._verifier = verifier
@@ -85,6 +103,7 @@ class BookSlotUseCase:
         self._notifier = notifier
         self._clock = clock
         self._config = config
+        self._refresh_bookings = refresh_bookings
 
     def execute(self, *, skip_wait: bool = False) -> int:
         if not self._config.bookings:
@@ -106,10 +125,21 @@ class BookSlotUseCase:
                 closes_at=now + (window.closes_at - window.opens_at),
                 retry_interval_seconds=window.retry_interval_seconds,
             )
+            targets = self._current_targets()
         else:
-            self._wait_until(window.opens_at)
+            if self._refresh_bookings is not None:
+                lead = timedelta(seconds=QUEUE_REREAD_LEAD_SECONDS)
+                self._wait_until(window.opens_at - lead, precise=False)
+            targets = self._current_targets()
+            if targets:
+                self._wait_until(window.opens_at)
 
-        return self._book_loop(session, window)
+        if not targets:
+            logger.info("Queue was emptied before the window opened: no booking to make")
+            self._notifier.notify(QUEUE_EMPTIED_NOTE)
+            return 0
+
+        return self._book_loop(session, window, targets)
 
     # -- steps -----------------------------------------------------------
 
@@ -135,19 +165,27 @@ class BookSlotUseCase:
         hour, minute, second = (int(part) for part in time_str.split(":"))
         return reference.replace(hour=hour, minute=minute, second=second, microsecond=0)
 
-    def _wait_until(self, target: datetime) -> None:
+    def _current_targets(self) -> list[BookingTarget]:
+        """The configured queue, or the hook's fresher one when it has an answer."""
+        fresh = self._refresh_bookings() if self._refresh_bookings is not None else None
+        return list(self._config.bookings) if fresh is None else fresh
+
+    def _wait_until(self, target: datetime, *, precise: bool = True) -> None:
+        """Sleep until `target`; `precise=False` skips the fine polling (a lead-up, not the window)."""
         while True:
             remaining = (target - self._clock.now()).total_seconds()
             if remaining <= 0:
                 return
-            if remaining > _COARSE_THRESHOLD_SECONDS:
+            if not precise:
+                self._clock.sleep(remaining)
+            elif remaining > _COARSE_THRESHOLD_SECONDS:
                 self._clock.sleep(remaining - _COARSE_THRESHOLD_SECONDS)
             else:
                 self._clock.sleep(_FINE_STEP_SECONDS)
 
-    def _book_loop(self, session: Session, window: BookingWindow) -> int:
+    def _book_loop(self, session: Session, window: BookingWindow, targets: list[BookingTarget]) -> int:
         """Round-robin over every pending target, downloading the table once per round."""
-        pending = [_TargetProgress(target) for target in self._config.bookings]
+        pending = [_TargetProgress(target) for target in targets]
         finished: list[_TargetProgress] = []
         attempts = 0
         relogin_used = False

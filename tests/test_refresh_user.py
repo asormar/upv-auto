@@ -50,6 +50,9 @@ class FakeUserDirectory:
     def roster(self):  # pragma: no cover - not exercised here
         raise NotImplementedError
 
+    def current_bookings(self, user_id):  # pragma: no cover - not exercised here
+        raise NotImplementedError
+
     def record_result(self, user_id, run_id, status, summary):  # pragma: no cover
         raise NotImplementedError
 
