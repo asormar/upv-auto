@@ -18,6 +18,7 @@ import { FriendsButton } from "./components/FriendsButton";
 import { FriendsDialog } from "./components/FriendsDialog";
 import { FriendsLive } from "./components/FriendsLive";
 import { FriendsWeek } from "./components/FriendsWeek";
+import { RunNotice } from "./components/RunNotice";
 import { QueuePanel } from "./components/QueuePanel";
 import { QueuePanelSkeleton } from "./components/QueuePanelSkeleton";
 import { ThemeToggle } from "./components/ThemeToggle";
@@ -26,7 +27,7 @@ import { Alert, Clock, Key, Refresh, Shield, SignOut } from "./components/icons"
 import { CredentialsDialog } from "./components/CredentialsDialog";
 import { describeActivity } from "./activity";
 import { NextRun } from "./components/NextRun";
-import { nextRunAt } from "./nextRun";
+import { nextRunAt, runPhase } from "./nextRun";
 import { useClock } from "./useClock";
 import { completeWeek } from "./week";
 import { DEFAULT_TIMEZONE, zonedIsoDate } from "./zone";
@@ -93,6 +94,9 @@ export default function App() {
   const nextRunMs = config
     ? (nextRunAt(config.window.weekday, config.window.opens_at, now, timeZone)?.getTime() ?? null)
     : null;
+  const phase = config
+    ? runPhase(config.window.weekday, config.window.opens_at, config.window.closes_at, now, timeZone)
+    : ({ kind: "idle" } as const);
   const today = zonedIsoDate(now, timeZone);
   const days = useMemo(
     () =>
@@ -278,6 +282,8 @@ export default function App() {
         <h1 className="page-title">
           {schedule ? describeActivity(schedule.activity) : "Cargando…"}
         </h1>
+
+        <RunNotice phase={phase} timeZone={timeZone} />
 
         <WeekBar days={days} activeIndex={dayIndex} onSelect={setDayIndex} />
 

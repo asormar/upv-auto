@@ -1481,6 +1481,14 @@ button,
   background: var(--ok-bg);
   color: var(--ok);
 }
+.authgate-banner.run-notice {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.authgate-banner.run-notice.warn {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+}
 .authgate-switch {
   min-height: 44px;
   padding: 4px;

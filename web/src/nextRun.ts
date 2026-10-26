@@ -37,6 +37,56 @@ export function nextRunAt(
   return ahead === 0 && next <= now ? at(7) : next;
 }
 
+/**
+ * How long before the window opens the batch re-reads every queue. Edits made
+ * from then on no longer count for today's run. Must equal
+ * `QUEUE_REREAD_LEAD_SECONDS` in `src/upv_auto/app/book_slot.py`.
+ */
+export const QUEUE_REREAD_LEAD_MS = 60_000;
+
+/** How early the softer "edits still count until..." hint appears. */
+const HINT_LEAD_MS = 20 * 60_000;
+
+export type RunPhase =
+  | { kind: "idle" }
+  /** Edits still count for today's run, until `cutoff`. */
+  | { kind: "soon"; cutoff: Date }
+  /** The queues are frozen: edits now count for next week. */
+  | { kind: "frozen" };
+
+/**
+ * Where "today's run" stands: quiet, about to freeze the queues, or past the
+ * freeze and until the window closes. `weekday`, `opensAt` and `closesAt` are
+ * wall-clock in `timeZone` (the UPV's).
+ */
+export function runPhase(
+  weekday: string,
+  opensAt: string,
+  closesAt: string,
+  now: Date = new Date(),
+  timeZone: string = DEFAULT_TIMEZONE,
+): RunPhase {
+  // The first opening less than a day behind us or ahead: today's run, if any.
+  const opens = nextRunAt(weekday, opensAt, new Date(now.getTime() - 24 * 3600_000), timeZone);
+  const [hours, minutes = 0, seconds = 0] = closesAt.split(":").map(Number);
+  if (!opens || Number.isNaN(hours)) return { kind: "idle" };
+  const day = zonedParts(opens, timeZone);
+  const closes = zonedInstant(timeZone, day.year, day.month, day.day, hours, minutes, seconds);
+
+  const cutoff = new Date(opens.getTime() - QUEUE_REREAD_LEAD_MS);
+  if (now >= cutoff && now < closes) return { kind: "frozen" };
+  if (now < cutoff && now.getTime() >= opens.getTime() - HINT_LEAD_MS) {
+    return { kind: "soon", cutoff };
+  }
+  return { kind: "idle" };
+}
+
+/** "10:00", read in `timeZone` (the UPV's). */
+export function formatClock(date: Date, timeZone: string = DEFAULT_TIMEZONE): string {
+  const p = zonedParts(date, timeZone);
+  return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+}
+
 /** "Sábado 19 sep, 10:01", read in `timeZone` (the UPV's). */
 export function formatRunDay(date: Date, timeZone: string = DEFAULT_TIMEZONE): string {
   const p = zonedParts(date, timeZone);
